@@ -40,7 +40,10 @@
 </script>
 
 <header>
-	<h1>Library</h1>
+	<div class="title">
+		<span class="label-mono">{tool ? store.tools.find((x) => x.id === tool)?.name ?? tool : 'all tools'}</span>
+		<h1>Library</h1>
+	</div>
 	<label class="search">
 		<Search size={15} />
 		<input placeholder="Search {items.length} items" bind:value={q} />
@@ -65,7 +68,7 @@
 			<div class="body">
 				<div class="name">
 					<span>{i.name}</span>
-					<span class="meta">{i.kind === 'mcp' ? 'MCP' : i.kind} · {t.name}</span>
+					<code class="meta">{i.kind}</code>
 				</div>
 				{#if i.description}<p>{i.description}</p>{/if}
 			</div>
@@ -86,32 +89,33 @@
 </ul>
 
 <style>
-	header { height: 48px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 20px; border-bottom: 1px solid var(--border); }
-	h1 { font-size: 15px; font-weight: 600; margin: 0; flex: 1; }
-	.search { display: flex; align-items: center; gap: 8px; height: 32px; width: min(360px, 40vw); padding: 0 10px; border-radius: 8px; box-shadow: 0 0 0 1px var(--input); color: var(--muted); }
-	.search:focus-within { box-shadow: 0 0 0 1px var(--ring); }
+	header { flex: none; display: flex; align-items: flex-end; gap: 16px; padding: 20px 24px 16px; border-bottom: 1px solid var(--border); }
+	.title { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+	h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.035em; margin: 0; line-height: 1.1; }
+	.search { display: flex; align-items: center; gap: 8px; height: 36px; width: min(360px, 40vw); padding: 0 12px; border-radius: var(--radius); background: var(--hover); border: 1px solid transparent; color: var(--muted); }
+	.search:focus-within { border-color: var(--brand); background: var(--card); }
 	.search input { flex: 1; min-width: 0; border: 0; background: none; outline: none; font-size: 13px; color: var(--foreground); }
-	.bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; flex: none; }
-	.tabs { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--card); box-shadow: 0 0 0 1px var(--border); }
-	.tabs button { border: 0; background: none; height: 28px; padding: 0 12px; border-radius: 7px; font-size: 13px; color: var(--muted); cursor: pointer; }
-	.tabs button span { font-size: 11px; color: var(--faint); margin-left: 4px; }
+	.bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 24px; flex: none; border-bottom: 1px solid var(--border); }
+	.tabs { display: flex; gap: 20px; }
+	.tabs button { position: relative; border: 0; background: none; height: 44px; padding: 0; font-size: 13px; color: var(--muted); cursor: pointer; }
+	.tabs button span { font-family: var(--mono); font-size: 11px; color: var(--faint); margin-left: 4px; }
 	.tabs button:hover { color: var(--foreground); }
-	.tabs button.active { background: var(--hover); color: var(--foreground); font-weight: 500; }
-	.hint { font-size: 12px; color: var(--faint); }
-	.err { color: var(--danger); margin: 0 20px 8px; font-size: 13px; }
-	ul { list-style: none; margin: 0; padding: 0 12px 16px; overflow-y: auto; flex: 1; }
-	li { display: flex; align-items: center; gap: 16px; padding: 10px 8px; border-radius: 8px; }
+	.tabs button.active { color: var(--foreground); font-weight: 500; }
+	.tabs button.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--brand); }
+	.tabs button.active span { color: var(--brand); }
+	.hint { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+	.err { margin: 12px 24px 0; padding: 10px 12px; font-size: 13px; color: var(--brand); background: var(--brand-tint); border-left: 2px solid var(--brand); }
+	ul { list-style: none; margin: 0; padding: 0 0 16px; overflow-y: auto; flex: 1; }
+	li { display: flex; align-items: center; gap: 16px; padding: 12px 24px; border-bottom: 1px solid var(--border); transition: background 0.12s; }
 	li:hover { background: var(--accent); }
-	li + li { border-top: 1px solid var(--border); }
-	li:hover, li:hover + li { border-top-color: transparent; }
 	li.off .body { opacity: 0.45; }
 	.body { flex: 1; min-width: 0; }
-	.name { display: flex; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 500; }
-	.meta { font-size: 11px; font-weight: 400; color: var(--faint); text-transform: capitalize; white-space: nowrap; }
-	p { margin: 2px 0 0; font-size: 12px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 1; line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
-	.empty { justify-content: center; padding: 40px; font-size: 13px; }
-	.switch { flex: none; width: 34px; height: 20px; border: 0; padding: 2px; border-radius: 10px; background: var(--hover); box-shadow: inset 0 0 0 1px var(--input); cursor: pointer; transition: background 0.15s; }
-	.switch span { display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--muted); transition: transform 0.15s, background 0.15s; }
-	.switch.on { background: var(--foreground); box-shadow: none; }
-	.switch.on span { transform: translateX(14px); background: var(--background); }
+	.name { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 500; }
+	.meta { font-family: var(--mono); font-size: 10.5px; font-weight: 400; padding: 1px 6px; border: 1px solid var(--border); border-radius: var(--radius); color: var(--muted); }
+	p { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 1; line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+	.empty { justify-content: center; padding: 48px; font-size: 13px; border: 0; }
+	.switch { flex: none; width: 36px; height: 20px; border: 0; padding: 2px; border-radius: 10px; background: #e2ded7; cursor: pointer; transition: background 0.15s; }
+	.switch span { display: block; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 15%); transition: transform 0.15s; }
+	.switch.on { background: var(--brand); }
+	.switch.on span { transform: translateX(16px); }
 </style>

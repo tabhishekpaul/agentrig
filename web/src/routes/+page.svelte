@@ -1,28 +1,44 @@
 <script>
+	import { ArrowRight } from '@lucide/svelte';
 	import { store, count } from '../lib/tools.svelte.js';
+	const installed = $derived(store.tools.filter((t) => t.installed));
+	const sum = (kind) => store.tools.reduce((n, t) => n + count(t.items, kind), 0);
 </script>
 
-<header><h1>Home</h1></header>
-<div class="body">
+<div class="page">
+	<section class="hero">
+		<span class="tag">{installed.length} of {store.tools.length || '…'} tools found</span>
+		<h1>Your AI rig.<br />In one place.</h1>
+		<p>Every skill, plugin and MCP server across your coding tools. Switch them on and off without touching a config file.</p>
+		<div class="stats">
+			<div><b class="tabular">{sum('skill')}</b><span>skills</span></div>
+			<div><b class="tabular">{sum('plugin')}</b><span>plugins</span></div>
+			<div><b class="tabular">{sum('mcp')}</b><span>MCP servers</span></div>
+		</div>
+		<a href="/library" class="cta">Open library <ArrowRight size={15} /></a>
+	</section>
+
+	<div class="label-mono heading">tools on this machine</div>
 	{#if store.error}
 		<p class="err">{store.error}</p>
 	{:else if !store.loaded}
 		<p class="muted">Scanning your tools…</p>
 	{:else}
-		<p class="lead muted">The AI coding tools on this machine and what's installed in each.</p>
 		<div class="grid">
-			{#each store.tools as t}
+			{#each store.tools as t, n}
 				<a class="card" href="/library?tool={t.id}">
 					<div class="top">
+						<span class="num">{String(n + 1).padStart(2, '0')}</span>
 						<strong>{t.name}</strong>
 						<span class="status"><span class="dot" class:ok={t.installed}></span>{t.installed ? 'Installed' : 'Not found'}</span>
 					</div>
 					{#if t.installed}
-						<dl>
-							<div><dt>Skills</dt><dd class="tabular">{count(t.items, 'skill')}</dd></div>
-							<div><dt>Plugins</dt><dd class="tabular">{count(t.items, 'plugin')}</dd></div>
-							<div><dt>MCP</dt><dd class="tabular">{count(t.items, 'mcp')}</dd></div>
-						</dl>
+						<div class="chips">
+							<code>{count(t.items, 'skill')} skills</code>
+							<code>{count(t.items, 'plugin')} plugins</code>
+							<code>{count(t.items, 'mcp')} mcp</code>
+						</div>
+						<span class="more">View items <ArrowRight size={13} /></span>
 					{/if}
 				</a>
 			{/each}
@@ -31,18 +47,33 @@
 </div>
 
 <style>
-	header { height: 48px; flex: none; display: flex; align-items: center; padding: 0 20px; border-bottom: 1px solid var(--border); }
-	h1 { font-size: 15px; font-weight: 600; margin: 0; }
-	.body { padding: 20px; overflow-y: auto; }
-	.lead { margin: 0 0 16px; font-size: 13px; }
+	.page { padding: 24px; overflow-y: auto; }
+	/* crimson band with a faint grid */
+	.hero {
+		position: relative; padding: 40px 40px 36px; color: var(--brand-ink); background-color: var(--brand);
+		background-image: linear-gradient(rgb(255 255 255 / 7%) 1px, transparent 1px), linear-gradient(90deg, rgb(255 255 255 / 7%) 1px, transparent 1px);
+		background-size: 24px 24px;
+	}
+	.tag { display: inline-block; padding: 6px 12px; font-size: 12px; border: 1px solid rgb(255 255 255 / 30%); border-radius: var(--radius); }
+	h1 { margin: 20px 0 12px; font-size: clamp(32px, 4.5vw, 52px); line-height: 1.05; font-weight: 500; letter-spacing: -0.045em; }
+	.hero p { margin: 0; max-width: 560px; font-size: 15px; line-height: 1.6; opacity: 0.92; }
+	.stats { display: flex; gap: 32px; margin: 28px 0; }
+	.stats div { display: flex; flex-direction: column; }
+	.stats b { font-size: 26px; font-weight: 500; letter-spacing: -0.03em; }
+	.stats span { font-family: var(--mono); font-size: 11px; opacity: 0.8; }
+	.cta { display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 20px; background: var(--brand-ink); color: var(--foreground); font-size: 14px; font-weight: 500; border-radius: var(--radius); text-decoration: none; }
+	.cta:hover { background: #fff; }
+	.heading { margin: 32px 0 12px; }
 	.err { color: var(--danger); }
-	.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
-	.card { display: block; padding: 16px; border-radius: var(--radius); background: var(--card); box-shadow: 0 0 0 1px var(--border); color: inherit; text-decoration: none; transition: box-shadow 0.12s; }
-	.card:hover { box-shadow: 0 0 0 1px color-mix(in oklch, var(--foreground) 30%, transparent); }
-	.top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-	strong { font-weight: 500; font-size: 14px; }
+	.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); border-top: 1px solid var(--border); border-left: 1px solid var(--border); }
+	.card { display: flex; flex-direction: column; gap: 14px; padding: 20px; background: var(--card); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); color: inherit; text-decoration: none; transition: background 0.12s; }
+	.card:hover { background: var(--brand-tint); }
+	.top { display: flex; align-items: baseline; gap: 10px; }
+	.num { font-family: var(--mono); font-size: 12px; color: var(--brand); }
+	strong { flex: 1; font-weight: 500; font-size: 15px; }
 	.status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
-	dl { display: flex; gap: 24px; margin: 16px 0 0; }
-	dt { font-size: 11px; color: var(--muted); }
-	dd { margin: 2px 0 0; font-size: 20px; font-weight: 600; }
+	.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+	code { font-family: var(--mono); font-size: 11px; padding: 3px 7px; border: 1px solid var(--border); border-radius: var(--radius); color: var(--muted); }
+	.more { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--foreground); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--faint); }
+	.card:hover .more { color: var(--brand); text-decoration-color: var(--brand); }
 </style>
