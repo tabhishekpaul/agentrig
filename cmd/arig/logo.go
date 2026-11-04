@@ -6,26 +6,26 @@ import (
 	"strings"
 )
 
-// banner draws the agentrig mark (three rack units, each with a status
-// light, on crimson) next to the name. Plain text when not a terminal or
-// NO_COLOR is set.
+// banner draws the agentrig mark (a stacked pyramid in three bands on
+// crimson, as in the app icon) next to the name. Lower half blocks leave a
+// crimson gap above each band, which makes the cuts. Plain text when not a
+// terminal or NO_COLOR is set.
 func banner(tagline string) string {
 	if !colorOK() {
 		return "agentrig  " + tagline + "\n"
 	}
 	const (
 		crimsonBG = "\x1b[48;2;199;0;54m"
-		creamBG   = "\x1b[48;2;255;251;245m"
-		crimsonFG = "\x1b[38;2;199;0;54m"
+		creamFG   = "\x1b[38;2;255;251;245m"
 		bold      = "\x1b[1m"
 		dim       = "\x1b[2m"
 		reset     = "\x1b[0m"
 	)
-	unit := crimsonBG + " " + creamBG + crimsonFG + " ● ━━━ " + crimsonBG + " " + reset
+	rows := []string{"    ▄    ", "   ▄▄▄   ", "  ▄▄▄▄▄  "}
 	right := []string{"", "  " + bold + "agentrig" + reset, "  " + dim + tagline + reset}
 	var b strings.Builder
-	for _, r := range right {
-		fmt.Fprintf(&b, "%s%s\n", unit, r)
+	for i, r := range rows {
+		fmt.Fprintf(&b, "%s%s%s%s%s\n", crimsonBG, creamFG, r, reset, right[i])
 	}
 	return b.String()
 }

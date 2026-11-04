@@ -19,7 +19,7 @@
 <div class="shell">
 	<aside>
 		<a href="/" class="brand">
-			<span class="mark"><Logo size={56} /></span>
+			<Logo size={28} />
 			<span>agentrig</span>
 		</a>
 		<nav>
@@ -47,9 +47,7 @@
 <style>
 	.shell { display: flex; height: 100vh; }
 	aside { width: 248px; flex: none; display: flex; flex-direction: column; background: var(--chrome); border-inline-end: 1px solid var(--border); }
-	.brand { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 16px 0 0; font-weight: 600; letter-spacing: -0.02em; font-size: 15px; color: var(--foreground); text-decoration: none; border-bottom: 1px solid var(--border); }
-	.mark { display: block; width: 56px; height: 56px; }
-	.mark :global(svg) { display: block; }
+	.brand { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 14px; font-weight: 600; letter-spacing: -0.02em; font-size: 15px; color: var(--foreground); text-decoration: none; border-bottom: 1px solid var(--border); }
 	nav { display: flex; flex-direction: column; gap: 1px; padding: 12px 8px; overflow-y: auto; }
 	.row { position: relative; display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border-radius: var(--radius); color: var(--foreground); text-decoration: none; font-size: 13px; transition: background 0.12s; }
 	.row:hover { background: var(--accent); }
