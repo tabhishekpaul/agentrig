@@ -15,3 +15,12 @@ export const catLabel = (id) => {
 	const t = tops[top] ?? subLabel(top);
 	return sub ? `${t} · ${subLabel(sub)}` : t;
 };
+
+// Plain-language meaning of the safety flags arig computes from a skill's files.
+export const FLAGS = {
+	scripts: 'Includes scripts your AI tool may run on your computer.',
+	network: 'Its scripts reach the internet.',
+	'shell-pipe': 'Downloads something and pipes it straight into a shell (curl … | sh).',
+	binary: 'Ships compiled or binary files that can’t be read or reviewed as text.',
+	large: 'Over 1 MB of files.'
+};

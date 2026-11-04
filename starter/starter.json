@@ -1,0 +1,455 @@
+[
+ {
+  "id": "egm",
+  "kind": "plugin",
+  "category": "productivity/planning",
+  "name": "EGM: Elephant & Goldfish Model",
+  "why": "Google's plugin for designing and reviewing software with AI: brainstorm, draft, review loops, drift reports.",
+  "stars": 11511,
+  "flags": [],
+  "default": true,
+  "repo": "google/elephant-goldfish-model",
+  "plugin": "egm@egm",
+  "install": {
+   "claude": [
+    [
+     "claude",
+     "plugin",
+     "marketplace",
+     "add",
+     "google/elephant-goldfish-model"
+    ],
+    [
+     "claude",
+     "plugin",
+     "install",
+     "egm@egm"
+    ]
+   ],
+   "codex": [
+    [
+     "codex",
+     "plugin",
+     "marketplace",
+     "add",
+     "google/elephant-goldfish-model"
+    ],
+    [
+     "codex",
+     "plugin",
+     "add",
+     "egm@egm"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "vercel-labs/agent-skills/vercel-react-best-practices",
+  "kind": "skill",
+  "category": "coding/frontend",
+  "name": "React best practices",
+  "why": "Vercel's rules for fast, idiomatic React and Next.js: rendering, data fetching, bundle size.",
+  "installs": 868432,
+  "flags": [],
+  "default": true
+ },
+ {
+  "id": "addyosmani/agent-skills/api-and-interface-design",
+  "kind": "skill",
+  "category": "coding/backend",
+  "name": "API and interface design",
+  "why": "Addy Osmani's guide to designing APIs and module boundaries that stay easy to change.",
+  "installs": 69033,
+  "flags": [],
+  "default": true
+ },
+ {
+  "id": "vercel-labs/agent-skills/vercel-react-native-skills",
+  "kind": "skill",
+  "category": "coding/mobile",
+  "name": "React Native",
+  "why": "Vercel's React Native and Expo patterns for performant, native-feeling mobile apps.",
+  "installs": 266018,
+  "flags": [],
+  "default": false
+ },
+ {
+  "id": "wshobson/agents/typescript-advanced-types",
+  "kind": "skill",
+  "category": "coding/languages",
+  "name": "Advanced TypeScript types",
+  "why": "Generics, conditional and mapped types, done right instead of reaching for any.",
+  "installs": 96884,
+  "flags": [],
+  "default": false
+ },
+ {
+  "id": "mattpocock/skills/tdd",
+  "kind": "skill",
+  "category": "coding/testing",
+  "name": "Test-driven development",
+  "why": "Matt Pocock's red-green-refactor loop: write the failing test first, then the code.",
+  "installs": 1194371,
+  "flags": [],
+  "default": true
+ },
+ {
+  "id": "obra/superpowers/systematic-debugging",
+  "kind": "skill",
+  "category": "coding/debugging",
+  "name": "Systematic debugging",
+  "why": "From Superpowers: find the root cause before touching code, instead of guessing at fixes.",
+  "installs": 319261,
+  "flags": [
+   "scripts"
+  ],
+  "default": true
+ },
+ {
+  "id": "mattpocock/skills/code-review",
+  "kind": "skill",
+  "category": "coding/review",
+  "name": "Code review",
+  "why": "Matt Pocock's checklist for reviewing a diff for bugs, clarity and risk before it merges.",
+  "installs": 845980,
+  "flags": [],
+  "default": true
+ },
+ {
+  "id": "obra/superpowers/using-git-worktrees",
+  "kind": "skill",
+  "category": "coding/git",
+  "name": "Git worktrees",
+  "why": "From Superpowers: isolated git worktrees so parallel work never tramples your checkout.",
+  "installs": 225263,
+  "flags": [],
+  "default": true
+ },
+ {
+  "id": "anthropics/skills/frontend-design",
+  "kind": "skill",
+  "category": "design/ui",
+  "name": "Frontend design",
+  "why": "Anthropic's skill for distinctive, production-grade interfaces instead of generic AI look.",
+  "installs": 1073112,
+  "flags": [],
+  "default": true
+ },
+ {
+  "id": "vercel-labs/agent-skills/web-design-guidelines",
+  "kind": "skill",
+  "category": "design/ux",
+  "name": "Web interface guidelines",
+  "why": "Audits UI code against Vercel's web interface guidelines: accessibility, forms, focus, motion.",
+  "installs": 821809,
+  "flags": [],
+  "default": true
+ },
+ {
+  "id": "anthropics/skills/theme-factory",
+  "kind": "skill",
+  "category": "design/brand",
+  "name": "Theme factory",
+  "why": "Anthropic's ready-made colour and type themes to style slides, docs and pages consistently.",
+  "installs": 98595,
+  "flags": [],
+  "default": false
+ },
+ {
+  "id": "anthropics/skills/canvas-design",
+  "kind": "skill",
+  "category": "media/image",
+  "name": "Canvas design",
+  "why": "Anthropic's skill for posters and visual art as PNG or PDF, drawn with code; no image API needed.",
+  "installs": 126655,
+  "flags": [],
+  "default": false
+ },
+ {
+  "id": "remotion-dev/skills/remotion-best-practices",
+  "kind": "skill",
+  "category": "media/video",
+  "name": "Remotion",
+  "why": "The official Remotion skill: make videos in React, from animations to captions and rendering.",
+  "installs": 744235,
+  "flags": [
+   "scripts",
+   "network",
+   "large"
+  ],
+  "default": false
+ },
+ {
+  "id": "openai/skills/speech",
+  "kind": "skill",
+  "category": "media/audio",
+  "name": "Speech",
+  "why": "OpenAI's text-to-speech skill: narration and voice-overs from text (needs an OpenAI API key).",
+  "installs": 0,
+  "flags": [
+   "scripts"
+  ],
+  "default": false,
+  "needs": [
+   "OPENAI_API_KEY"
+  ]
+ },
+ {
+  "id": "cloudai-x/threejs-skills/threejs-fundamentals",
+  "kind": "skill",
+  "category": "media/3d",
+  "name": "Three.js fundamentals",
+  "why": "Scenes, cameras, lights and materials in Three.js, the base for any 3D on the web.",
+  "installs": 20037,
+  "flags": [],
+  "default": false
+ },
+ {
+  "id": "anthropics/skills/doc-coauthoring",
+  "kind": "skill",
+  "category": "writing/docs",
+  "name": "Doc co-authoring",
+  "why": "Anthropic's structured workflow for writing specs, proposals and docs together with you.",
+  "installs": 97547,
+  "flags": [],
+  "default": true
+ },
+ {
+  "id": "hardikpandya/stop-slop/stop-slop",
+  "kind": "skill",
+  "category": "writing/content",
+  "name": "Stop slop",
+  "why": "Strips the tell-tale AI phrasing from prose so writing reads like a person wrote it.",
+  "installs": 18873,
+  "flags": [],
+  "default": false
+ },
+ {
+  "id": "coreyhaines31/marketingskills/copywriting",
+  "kind": "skill",
+  "category": "writing/marketing",
+  "name": "Copywriting",
+  "why": "Corey Haines' conversion copywriting for landing pages, headlines and calls to action.",
+  "installs": 244891,
+  "flags": [],
+  "default": false
+ },
+ {
+  "id": "anthropics/knowledge-work-plugins/data-visualization",
+  "kind": "skill",
+  "category": "data/analysis",
+  "name": "Data visualization",
+  "why": "Anthropic's guide to choosing and building clear charts from your data.",
+  "installs": 14162,
+  "flags": [],
+  "default": false
+ },
+ {
+  "id": "huggingface/skills/huggingface-llm-trainer",
+  "kind": "skill",
+  "category": "data/ml",
+  "name": "Hugging Face LLM trainer",
+  "why": "Official Hugging Face skill to fine-tune language models with TRL on HF Jobs.",
+  "installs": 2318,
+  "flags": [
+   "scripts",
+   "network"
+  ],
+  "default": false
+ },
+ {
+  "id": "supabase/agent-skills/supabase-postgres-best-practices",
+  "kind": "skill",
+  "category": "data/databases",
+  "name": "Postgres best practices",
+  "why": "Supabase's Postgres rules: schema, indexes, queries and row-level security.",
+  "installs": 472699,
+  "flags": [],
+  "default": false
+ },
+ {
+  "id": "k-dense-ai/scientific-agent-skills/scientific-critical-thinking",
+  "kind": "skill",
+  "category": "data/science",
+  "name": "Scientific critical thinking",
+  "why": "K-Dense's method for weighing evidence, study design and statistics in research.",
+  "installs": 2459,
+  "flags": [],
+  "default": false
+ },
+ {
+  "id": "cloudflare/skills/cloudflare",
+  "kind": "skill",
+  "category": "devops/cloud",
+  "name": "Cloudflare",
+  "why": "Cloudflare's official skill covering Workers, Pages, storage, AI and networking.",
+  "installs": 147439,
+  "flags": [],
+  "default": false
+ },
+ {
+  "id": "openai/skills/gh-fix-ci",
+  "kind": "skill",
+  "category": "devops/ci",
+  "name": "Fix failing CI",
+  "why": "OpenAI's skill to read failing GitHub Actions checks with gh and fix them.",
+  "installs": 11698,
+  "flags": [
+   "scripts"
+  ],
+  "default": false,
+  "needs": [
+   "gh"
+  ]
+ },
+ {
+  "id": "hashicorp/agent-skills/terraform-style-guide",
+  "kind": "skill",
+  "category": "devops/infra",
+  "name": "Terraform style guide",
+  "why": "HashiCorp's official conventions for writing clean, reviewable Terraform.",
+  "installs": 12938,
+  "flags": [],
+  "default": false
+ },
+ {
+  "id": "usestrix/strix/web-app-penetration-testing",
+  "kind": "skill",
+  "category": "security/pentest",
+  "name": "Web app pentesting",
+  "why": "Strix's workflow to pentest your own web app and prove each finding with a working exploit.",
+  "installs": 15069,
+  "flags": [],
+  "default": false,
+  "needs": [
+   "strix"
+  ]
+ },
+ {
+  "id": "anthropics/skills/pdf",
+  "kind": "skill",
+  "category": "documents/pdf",
+  "name": "PDF",
+  "why": "Anthropic's skill to read, fill, merge, split and create PDF files.",
+  "installs": 222591,
+  "flags": [
+   "scripts"
+  ],
+  "default": true
+ },
+ {
+  "id": "trailofbits/skills/differential-review",
+  "kind": "skill",
+  "category": "security/appsec",
+  "name": "Differential security review",
+  "why": "Trail of Bits' security review of code changes: finds the vulnerabilities a diff introduces.",
+  "installs": 9584,
+  "flags": [],
+  "default": true
+ },
+ {
+  "id": "anthropics/skills/docx",
+  "kind": "skill",
+  "category": "documents/office",
+  "name": "Word documents",
+  "why": "Anthropic's skill to create, edit and review .docx files, tracked changes included.",
+  "installs": 0,
+  "flags": [
+   "scripts",
+   "network",
+   "large"
+  ],
+  "default": false
+ },
+ {
+  "id": "anthropics/skills/xlsx",
+  "kind": "skill",
+  "category": "documents/spreadsheets",
+  "name": "Spreadsheets",
+  "why": "Anthropic's skill for .xlsx files: formulas, formatting, charts and data cleanup.",
+  "installs": 0,
+  "flags": [
+   "scripts",
+   "network",
+   "large"
+  ],
+  "default": false
+ },
+ {
+  "id": "vercel-labs/skills/find-skills",
+  "kind": "skill",
+  "category": "agents/skills",
+  "name": "Find skills",
+  "why": "Vercel's skill that searches the open skills ecosystem when you ask for something you don't have yet.",
+  "installs": 4200000,
+  "flags": [],
+  "default": true
+ },
+ {
+  "id": "anthropics/skills/mcp-builder",
+  "kind": "skill",
+  "category": "agents/mcp",
+  "name": "MCP builder",
+  "why": "Anthropic's guide to building good MCP servers that let AI tools talk to your services.",
+  "installs": 0,
+  "flags": [
+   "scripts",
+   "network"
+  ],
+  "default": false
+ },
+ {
+  "id": "obra/superpowers/subagent-driven-development",
+  "kind": "skill",
+  "category": "agents/automation",
+  "name": "Subagent-driven development",
+  "why": "From Superpowers: hand each task of a plan to a fresh subagent and review its work.",
+  "installs": 0,
+  "flags": [
+   "scripts"
+  ],
+  "default": false
+ },
+ {
+  "id": "obra/superpowers/writing-plans",
+  "kind": "skill",
+  "category": "productivity/planning",
+  "name": "Writing plans",
+  "why": "From Superpowers: turn a spec into a step-by-step implementation plan before coding.",
+  "installs": 0,
+  "flags": [],
+  "default": true
+ },
+ {
+  "id": "obra/superpowers/executing-plans",
+  "kind": "skill",
+  "category": "productivity/workflow",
+  "name": "Executing plans",
+  "why": "From Superpowers: work through a written plan task by task, checking off as you go.",
+  "installs": 0,
+  "flags": [
+   "scripts"
+  ],
+  "default": false
+ },
+ {
+  "id": "browser-use/video-use/video-use",
+  "kind": "skill",
+  "category": "media/video",
+  "name": "video-use",
+  "why": "Browser Use's video editor for coding agents: cuts filler, grades color, burns subtitles, renders.",
+  "installs": 5433,
+  "flags": [
+   "scripts",
+   "network"
+  ],
+  "default": true,
+  "needs": [
+   "ffmpeg",
+   "uv",
+   "ELEVENLABS_API_KEY"
+  ],
+  "setup": "Needs ffmpeg (brew install ffmpeg), uv for its Python helpers, and an ElevenLabs API key for transcription: put ELEVENLABS_API_KEY in the skill folder's .env (see its install.md). arig never asks for or stores the key.",
+  "repo": "browser-use/video-use"
+ }
+]

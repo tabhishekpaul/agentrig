@@ -1,18 +1,9 @@
 <script>
-	import { Search, Download, ExternalLink, TriangleAlert, Check, X, ArrowUpCircle, FolderSearch } from '@lucide/svelte';
+	import { Search, Download, ExternalLink, TriangleAlert, Check, X, ArrowUpCircle, FolderSearch, PackagePlus } from '@lucide/svelte';
 	import { api } from '../../lib/api.js';
-	import { subLabel, catLabel } from '../../lib/labels.js';
+	import { subLabel, catLabel, FLAGS } from '../../lib/labels.js';
 	import { load } from '../../lib/tools.svelte.js';
 	import ToolIcon from '../../lib/ToolIcon.svelte';
-
-	// Plain-language meaning of the safety flags arig computes from a skill's files.
-	const FLAGS = {
-		scripts: 'Includes scripts your AI tool may run on your computer.',
-		network: 'Its scripts reach the internet.',
-		'shell-pipe': 'Downloads something and pipes it straight into a shell (curl … | sh).',
-		binary: 'Ships compiled or binary files that can’t be read or reviewed as text.',
-		large: 'Over 1 MB of files.'
-	};
 
 	let info = $state(null);
 	let error = $state('');
@@ -153,6 +144,7 @@
 		<span class="label-mono">skills from skills.sh</span>
 		<h1>Marketplace</h1>
 	</div>
+	<a class="starter" href="/welcome"><PackagePlus size={15} /> Starter pack</a>
 	<label class="search">
 		<Search size={15} />
 		<input placeholder="Search skills.sh" bind:value={q} oninput={() => (tab = 'browse')} />
@@ -369,6 +361,8 @@
 	.title { flex: 1; display: flex; flex-direction: column; gap: 4px; }
 	h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.035em; margin: 0; line-height: 1.1; }
 	h2 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 18px; font-weight: 500; letter-spacing: -0.02em; margin: 6px 0 0; }
+	.starter { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: var(--radius); border: 1px solid var(--input); font-size: 13px; color: var(--foreground); text-decoration: none; }
+	.starter:hover { background: var(--hover); }
 	.search { display: flex; align-items: center; gap: 8px; height: 36px; width: min(360px, 40vw); padding: 0 12px; border-radius: var(--radius); background: var(--hover); border: 1px solid transparent; color: var(--muted); }
 	.search:focus-within { border-color: var(--brand-line); }
 	.search input { flex: 1; min-width: 0; border: 0; background: none; outline: none; font-size: 13px; color: var(--foreground); }
