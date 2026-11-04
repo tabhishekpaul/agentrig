@@ -169,10 +169,10 @@ func ensureService() error {
 			return err
 		}
 		if stale {
-			_ = run("taskkill", "/F", "/IM", "arig.exe") // ponytail: also stops a foreground arig
+			stopServer() // the old build only; never this arig or others
 		}
 		if !running || stale {
-			if err := exec.Command(exe, "serve").Start(); err != nil {
+			if err := startServer(exe); err != nil {
 				return err
 			}
 		}
@@ -206,7 +206,7 @@ func removeService() error {
 	case "windows":
 		_ = run("reg", "delete", winRunKey, "/v", "arig", "/f")
 		removeShortcut()
-		_ = run("taskkill", "/F", "/IM", "arig.exe")
+		stopServer()
 	}
 	return nil
 }
@@ -218,5 +218,20 @@ func logHint() string {
 	case "linux":
 		return "journalctl --user -u arig"
 	}
-	return "run `arig serve` to see errors"
+	return serverLog()
+}
+
+// stopServer stops the background server by its process id.
+func stopServer() {
+	if pid := agentrig.RunningPID(agentrig.DefaultPort); pid > 0 && pid != os.Getpid() {
+		if p, err := os.FindProcess(pid); err == nil {
+			_ = p.Kill()
+			for range 20 { // let the port go before a new server takes it
+				if !agentrig.Running(agentrig.DefaultPort) {
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+	}
 }

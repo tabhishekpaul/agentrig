@@ -52,6 +52,7 @@ func main() {
 		fs := flag.NewFlagSet("serve", flag.ExitOnError)
 		port := fs.Int("port", agentrig.DefaultPort, "port on this machine")
 		fs.Parse(os.Args[2:])
+		serverDetach() // Windows: no console window that could take the server down
 		// Another arig (e.g. an old foreground one) holds the port: wait and take
 		// over when it stops, rather than exiting into a restart loop.
 		for {

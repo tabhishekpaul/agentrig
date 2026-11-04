@@ -98,7 +98,7 @@ func Launch(port int, open bool) error {
 	mux := http.NewServeMux()
 	registerAPI(mux, syncer)
 	mux.HandleFunc("GET /api/ping", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, map[string]string{"app": "arig", "build": Build})
+		writeJSON(w, map[string]any{"app": "arig", "build": Build, "pid": os.Getpid()})
 	})
 	mux.Handle("/", spa(ui))
 	h := guard(port, mux)
@@ -132,6 +132,27 @@ var Build = func() string {
 func Running(port int) bool { return RunningBuild(port) != "" }
 
 // RunningBuild returns the Build of the arig serving port ("" if none).
+// RunningPID is the process id of the arig serving port (0 if none, or an
+// older arig that doesn't say), so it can be stopped without touching others.
+func RunningPID(port int) int {
+	req, _ := http.NewRequest("GET", fmt.Sprintf("http://127.0.0.1:%d/api/ping", port), nil)
+	req.Host = fmt.Sprintf("arig.localhost:%d", port)
+	req.Header.Set(apiHeader, "1")
+	res, err := (&http.Client{Timeout: time.Second}).Do(req)
+	if err != nil {
+		return 0
+	}
+	defer res.Body.Close()
+	var body struct {
+		App string
+		PID int
+	}
+	if json.NewDecoder(res.Body).Decode(&body) != nil || body.App != "arig" {
+		return 0
+	}
+	return body.PID
+}
+
 func RunningBuild(port int) string {
 	req, _ := http.NewRequest("GET", fmt.Sprintf("http://127.0.0.1:%d/api/ping", port), nil)
 	req.Host = fmt.Sprintf("arig.localhost:%d", port)
