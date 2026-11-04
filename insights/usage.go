@@ -35,6 +35,9 @@ const (
 //     (plugin skills are "plugin:skill", e.g. "superpowers:brainstorming")
 //   - the user types it: user line whose content string starts with
 //     <command-name>/frontend-design</command-name>
+//   - the model reads its SKILL.md directly, which is how skills found through
+//     the skills index are used: {"type":"tool_use","name":"Read",
+//     "input":{"file_path":".../frontend-design/SKILL.md"}}
 var commandName = regexp.MustCompile(`^<command-name>/([^<\s]+)</command-name>`)
 
 type transcriptLine struct {
@@ -59,7 +62,8 @@ func parseTranscript(r io.Reader) map[string]Use {
 	br := bufio.NewReaderSize(r, 64<<10)
 	for {
 		line, err := readLine(br)
-		if len(line) > 0 && (bytes.Contains(line, []byte(`"name":"Skill"`)) || bytes.Contains(line, []byte(`<command-name>/`))) {
+		if len(line) > 0 && (bytes.Contains(line, []byte(`"name":"Skill"`)) || bytes.Contains(line, []byte(`<command-name>/`)) ||
+			bytes.Contains(line, []byte(`SKILL.md`))) {
 			var l transcriptLine
 			if json.Unmarshal(line, &l) == nil {
 				switch l.Type {
@@ -68,13 +72,19 @@ func parseTranscript(r io.Reader) map[string]Use {
 						Type  string `json:"type"`
 						Name  string `json:"name"`
 						Input struct {
-							Skill string `json:"skill"`
+							Skill    string `json:"skill"`
+							FilePath string `json:"file_path"`
 						} `json:"input"`
 					}
 					if json.Unmarshal(l.Message.Content, &blocks) == nil {
 						for _, b := range blocks {
 							if b.Type == "tool_use" && b.Name == "Skill" && b.Input.Skill != "" {
 								add(b.Input.Skill, l.Timestamp)
+							}
+							if b.Type == "tool_use" && b.Name == "Read" {
+								if name := skillOfPath(b.Input.FilePath); name != "" {
+									add(name, l.Timestamp)
+								}
 							}
 						}
 					}
@@ -93,6 +103,29 @@ func parseTranscript(r io.Reader) map[string]Use {
 		}
 	}
 }
+
+// skillOfPath names the skill whose SKILL.md a path is: the folder holding it,
+// or for a central-library entry (<name>/<hash>/SKILL.md) the folder above.
+func skillOfPath(p string) string {
+	p = filepath.ToSlash(p)
+	if !strings.HasSuffix(p, "/SKILL.md") {
+		return ""
+	}
+	parts := strings.Split(strings.TrimSuffix(p, "/SKILL.md"), "/")
+	if len(parts) < 2 {
+		return ""
+	}
+	name := parts[len(parts)-1]
+	if hashLike.MatchString(name) && strings.Contains(p, "/.arig/library/") {
+		name = parts[len(parts)-2]
+	}
+	if name == "skills-index" {
+		return "" // reading the index isn't using a skill
+	}
+	return name
+}
+
+var hashLike = regexp.MustCompile(`^[0-9a-f]{12}$`)
 
 // readLine returns the next line, or nil for a line longer than maxLine
 // (consumed and dropped without buffering it all).
@@ -116,7 +149,12 @@ func readLine(br *bufio.Reader) ([]byte, error) {
 	}
 }
 
+// parserVersion: bump when parseTranscript learns something new, so cached
+// per-file results from the older parser are re-read.
+const parserVersion = 2
+
 type cachedFile struct {
+	V       int            `json:"v"`
 	ModTime time.Time      `json:"mtime"`
 	Size    int64          `json:"size"`
 	Uses    map[string]Use `json:"uses"`
@@ -144,7 +182,7 @@ func ClaudeUsage(dir, cacheFile string) map[string]Use {
 		if err != nil || info.ModTime().Before(cutoff) {
 			return nil
 		}
-		if c, ok := cache[p]; ok && c.Size == info.Size() && c.ModTime.Equal(info.ModTime()) {
+		if c, ok := cache[p]; ok && c.V == parserVersion && c.Size == info.Size() && c.ModTime.Equal(info.ModTime()) {
 			fresh[p] = c
 			return nil
 		}
@@ -152,7 +190,7 @@ func ClaudeUsage(dir, cacheFile string) map[string]Use {
 		if err != nil {
 			return nil
 		}
-		fresh[p] = cachedFile{ModTime: info.ModTime(), Size: info.Size(), Uses: parseTranscript(f)}
+		fresh[p] = cachedFile{V: parserVersion, ModTime: info.ModTime(), Size: info.Size(), Uses: parseTranscript(f)}
 		f.Close()
 		return nil
 	})

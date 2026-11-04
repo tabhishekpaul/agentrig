@@ -210,3 +210,15 @@ func TestRestoreConfinedAndUndoable(t *testing.T) {
 		t.Error("undo backup should be listed")
 	}
 }
+
+func TestUsageCountsSkillReads(t *testing.T) {
+	lines := `{"type":"assistant","timestamp":"2026-11-01T10:00:00Z","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/Users/x/.arig/library/frontend-design/c8a1301e066b/SKILL.md"}}]}}
+{"type":"assistant","timestamp":"2026-11-02T10:00:00Z","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/Users/x/.claude/skills/pdf/SKILL.md"}}]}}
+{"type":"assistant","timestamp":"2026-11-02T10:00:00Z","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/Users/x/.arig/index/skills-index/SKILL.md"}}]}}
+{"type":"assistant","timestamp":"2026-11-02T10:00:00Z","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/Users/x/notes/README.md"}}]}}
+`
+	got := parseTranscript(strings.NewReader(lines))
+	if got["frontend-design"].Count != 1 || got["pdf"].Count != 1 || len(got) != 2 {
+		t.Fatalf("got %v", got)
+	}
+}

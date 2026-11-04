@@ -18,17 +18,38 @@
 	let undo = $state(null);
 	let notice = $state('');
 	let profileName = $state('');
+	let idx = $state(null); // the skills index: /api/index
+
+	// Index mode: every other skill off in the tools, reached through the index.
+	function askIndexMode(on) {
+		confirm = {
+			kind: 'index',
+			title: on
+				? `Switch off all skills except the index? Your AI finds them through the index instead: ≈ ${fmt(idx.indexOnly)} tokens per message instead of ≈ ${fmt(idx.tokens)}. Your current setup is saved as the profile "Before index mode".`
+				: 'Turn index mode off and switch your skills back on as they were?',
+			lines: [],
+			run: () =>
+				run(async () => {
+					idx = await post('index', { indexMode: on });
+					notice = on ? 'Index mode is on. New sessions load only the index.' : 'Index mode is off. Your skills are back as they were.';
+				})
+		};
+	}
+	async function setIndex(enabled) {
+		await run(async () => (idx = await post('index', { enabled })));
+	}
 
 	const post = (path, body) =>
 		api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
 	async function refresh() {
 		try {
-			[ov, dups, profiles, backups] = await Promise.all([
+			[ov, dups, profiles, backups, idx] = await Promise.all([
 				api('insights'),
 				api('insights/duplicates'),
 				api('insights/profiles'),
-				api('insights/backups')
+				api('insights/backups'),
+				api('index')
 			]);
 		} catch (e) {
 			error = e.message;
@@ -187,6 +208,27 @@
 	{#if ov === null && !error}
 		<p class="muted">Reading your skills and history…</p>
 	{:else if ov}
+		{#if idx}
+			<div class="label-mono heading">skills index</div>
+			<div class="meter index">
+				{#if idx.indexMode}
+					<div>Index mode is on: each tool loads only the index, ≈ <b class="tabular">{fmt(idx.indexOnly)}</b> tokens per message for <b class="tabular">{fmt(idx.skills)}</b> skills</div>
+				{:else}
+					<div>With index mode: ≈ <b class="tabular">{fmt(idx.indexOnly)}</b> tokens per message instead of ≈ <b class="tabular">{fmt(idx.tokens)}</b>, and all <b class="tabular">{fmt(idx.skills)}</b> skills still reachable</div>
+				{/if}
+				<span class="hint">One small skill, <code>skills-index</code>, lists every skill by category with the path to its SKILL.md. Your AI reads it when a task needs a skill, then reads only that skill.{#if idx.enabled} File: {idx.path}{/if}</span>
+				<div class="row">
+					{#if idx.indexMode}
+						<button class="ghost" disabled={busy} onclick={() => askIndexMode(false)}>Turn index mode off</button>
+					{:else}
+						<button class="primary" disabled={busy || !idx.enabled} onclick={() => askIndexMode(true)}>Turn on index mode</button>
+						<button class="ghost" disabled={busy} onclick={() => setIndex(!idx.enabled)}>{idx.enabled ? 'Remove the index' : 'Add the index to my tools'}</button>
+					{/if}
+				</div>
+			</div>
+			{@render confirmBox('index')}
+		{/if}
+
 		<div class="label-mono heading">context cost</div>
 		<div class="meter">
 			<div>
@@ -318,6 +360,7 @@
 	.meter { display: flex; flex-direction: column; gap: 6px; padding: 18px 20px; background: var(--card); border: 1px solid var(--border); font-size: 15px; }
 	.meter b { font-weight: 500; font-size: 22px; letter-spacing: -0.03em; color: var(--brand-text); }
 	.meter .row { margin-top: 10px; }
+	.meter.index { margin-bottom: 24px; }
 	.row { display: flex; align-items: center; gap: 10px; }
 	.table { border-top: 1px solid var(--border); border-left: 1px solid var(--border); margin-top: 12px; }
 	.trow, .srow, .drow { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 40px; padding: 8px 14px; background: var(--card); border: 0; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); font-size: 13px; text-align: left; color: var(--foreground); }

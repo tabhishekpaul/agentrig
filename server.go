@@ -90,6 +90,9 @@ func Launch(port int, open bool) error {
 	}
 	go syncer.Loop(context.Background(), SyncEvery)
 	go gitsync.Providers(false) // warm: the Sync page opens without waiting on GitHub
+	if home, err := os.UserHomeDir(); err == nil {
+		go indexLoop(context.Background(), home) // the skills index every tool reads
+	}
 
 	ui, _ := fs.Sub(webBuild, "web/build")
 	mux := http.NewServeMux()

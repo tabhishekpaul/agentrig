@@ -60,7 +60,7 @@ func Cleanup(tools []adapters.Tool, usage map[string]Use, dups []Dup, now time.T
 	var out []Suggestion
 	for _, t := range tools {
 		for _, it := range t.Items {
-			if it.Kind != "skill" && it.Kind != "plugin" {
+			if it.Kind != "skill" && it.Kind != "plugin" || it.ID == "skills-index" { // the index is how the others get used
 				continue
 			}
 			s := Suggestion{Tool: t.ID, ToolName: t.Name, Kind: it.Kind, ID: it.ID, Name: it.Name, Enabled: it.Enabled,

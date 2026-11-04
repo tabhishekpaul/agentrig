@@ -67,7 +67,7 @@ func Build(tools []adapters.Tool, usage map[string]Use, now time.Time) Overview 
 				if ok {
 					sc.Uses = &u
 				}
-				if it.Toggleable && (!ok || now.Sub(u.Last) > UnusedAfter) {
+				if it.Toggleable && it.ID != "skills-index" && (!ok || now.Sub(u.Last) > UnusedAfter) {
 					tc.Unused = append(tc.Unused, it.ID)
 				}
 			}
