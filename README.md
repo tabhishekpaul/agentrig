@@ -45,20 +45,26 @@ go build -o arig ./cmd/arig
 ./arig launch
 ```
 
-The browser opens at `http://127.0.0.1:<port>/?token=…`.
+The dashboard opens at **http://arig.localhost:2744**: bookmark it or type it any time `arig` is running (2744 spells "arig" on a phone keypad). Running `arig launch` again just reopens it. Use `-port` to pick another port.
 
 ## Develop
 
 ```sh
-go run ./cmd/arig launch -addr 127.0.0.1:7777 -no-open   # prints the token
-cd web && npm run dev                     # open the Vite URL with ?token=<token>
+go run ./cmd/arig launch -no-open   # API on arig.localhost:2744
+cd web && npm run dev               # open the Vite URL
 ```
 
 Vite proxies `/api` to the Go server, so the UI hot-reloads.
 
 ## Security
 
-The server listens on `127.0.0.1` only. Every `/api` request needs the per-launch token, and requests with any other `Host` header are rejected, so other websites can't drive it. MCP server configs can contain API keys, so only server names are sent to the UI.
+The server listens on loopback only (`127.0.0.1` and `::1`), so nothing on your network can reach it. Websites you visit can't drive it either:
+
+- Requests whose `Host` isn't `arig.localhost`, `localhost`, `127.0.0.1` or `[::1]` on arig's port are rejected, which blocks DNS rebinding.
+- `/api` calls need an `X-Arig` header. A website can only send a custom header after the browser asks arig's permission (a CORS preflight), which arig never grants.
+- A request whose `Origin` is anything other than arig itself is rejected.
+
+The address carries no secret, so other programs and other user accounts on the same machine can call the API. MCP server configs can contain API keys, so only server names are ever sent to the UI.
 
 ## Layout
 

@@ -12,7 +12,7 @@ import (
 const usage = `arig: manage the skills, plugins and MCP servers across your AI coding tools
 
 Usage:
-  arig launch [flags]   open the dashboard in your browser
+  arig launch [flags]   open the dashboard at http://arig.localhost:2744
 
 Run "arig launch -h" for flags.
 `
@@ -25,10 +25,10 @@ func main() {
 	switch os.Args[1] {
 	case "launch":
 		fs := flag.NewFlagSet("launch", flag.ExitOnError)
-		addr := fs.String("addr", "127.0.0.1:0", "listen address (keep it on loopback)")
+		port := fs.Int("port", agentrig.DefaultPort, "port on this machine")
 		noOpen := fs.Bool("no-open", false, "print the URL instead of opening the browser")
 		fs.Parse(os.Args[2:])
-		if err := agentrig.Launch(*addr, !*noOpen); err != nil {
+		if err := agentrig.Launch(*port, !*noOpen); err != nil {
 			fmt.Fprintln(os.Stderr, "arig:", err)
 			os.Exit(1)
 		}
