@@ -2,28 +2,30 @@
 @import '@fontsource/poppins/500.css';
 @import '@fontsource/poppins/600.css';
 
-/* Warm paper, ink text, one crimson accent. Near-square corners, hairline
-   borders, small monospace labels. */
+/* Dark only: warm near-black, warm off-white text, one crimson accent.
+   Near-square corners, hairline borders, small monospace labels. */
 :root {
-	color-scheme: light;
-	--background: #fdfcfa; /* paper */
-	--chrome: #f7f5f1; /* sidebar */
-	--card: #ffffff;
-	--hover: #f1eee9;
-	--foreground: #262626; /* ink */
-	--muted: #707070;
-	--faint: #a3a3a3;
-	--border: rgb(38 38 38 / 10%);
-	--input: rgb(38 38 38 / 16%);
-	--brand: #c70036; /* crimson */
+	color-scheme: dark;
+	--background: #151414;
+	--chrome: #191817; /* sidebar */
+	--card: #191817;
+	--hover: #2a2927; /* raised: inputs, tracks */
+	--foreground: #f0e3de;
+	--muted: #9a9390;
+	--faint: #6e6866;
+	--border: #2a2928;
+	--input: #353333;
+	--brand: #c70036; /* crimson fills */
+	--brand-text: #e34568; /* crimson text, readable on dark */
 	--brand-ink: #fffbf5; /* text on crimson */
-	--brand-tint: #fbeef1; /* callouts, selection */
-	--accent: rgb(38 38 38 / 4%);
+	--brand-tint: rgb(199 0 54 / 10%);
+	--brand-line: rgb(199 0 54 / 30%);
+	--accent: rgb(240 227 222 / 4%);
 	--selected: var(--brand-tint);
-	--ring: var(--brand);
-	--ok: #16a34a;
-	--off: #c4c4c4;
-	--danger: #c70036;
+	--ring: var(--brand-text);
+	--ok: #34d399;
+	--off: #57524f;
+	--danger: #e34568;
 	--radius: 2px;
 	--mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
 	font-family: 'Poppins', system-ui, sans-serif;
@@ -42,5 +44,5 @@ button, input { font: inherit; color: inherit; }
 .muted { color: var(--muted); }
 .tabular { font-variant-numeric: tabular-nums; }
 /* "// section" labels */
-.label-mono { font-family: var(--mono); font-size: 11px; letter-spacing: 0.02em; color: var(--brand); }
+.label-mono { font-family: var(--mono); font-size: 11px; letter-spacing: 0.02em; color: var(--brand-text); }
 .label-mono::before { content: '//\00a0'; }

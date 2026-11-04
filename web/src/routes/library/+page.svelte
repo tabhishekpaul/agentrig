@@ -95,7 +95,7 @@
 	.title { flex: 1; display: flex; flex-direction: column; gap: 4px; }
 	h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.035em; margin: 0; line-height: 1.1; }
 	.search { display: flex; align-items: center; gap: 8px; height: 36px; width: min(360px, 40vw); padding: 0 12px; border-radius: var(--radius); background: var(--hover); border: 1px solid transparent; color: var(--muted); }
-	.search:focus-within { border-color: var(--brand); background: var(--card); }
+	.search:focus-within { border-color: var(--brand-line); }
 	.search input { flex: 1; min-width: 0; border: 0; background: none; outline: none; font-size: 13px; color: var(--foreground); }
 	.bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 24px; flex: none; border-bottom: 1px solid var(--border); }
 	.tabs { display: flex; gap: 20px; }
@@ -104,22 +104,22 @@
 	.tabs button:hover { color: var(--foreground); }
 	.tabs button.active { color: var(--foreground); font-weight: 500; }
 	.tabs button.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--brand); }
-	.tabs button.active span { color: var(--brand); }
+	.tabs button.active span { color: var(--brand-text); }
 	.hint { font-family: var(--mono); font-size: 11px; color: var(--faint); }
-	.err { margin: 12px 24px 0; padding: 10px 12px; font-size: 13px; color: var(--brand); background: var(--brand-tint); border-left: 2px solid var(--brand); }
+	.err { margin: 12px 24px 0; padding: 10px 12px; font-size: 13px; color: var(--brand-text); background: var(--brand-tint); border-left: 2px solid var(--brand); }
 	ul { list-style: none; margin: 0; padding: 0 0 16px; overflow-y: auto; flex: 1; }
 	li { display: flex; align-items: center; gap: 16px; padding: 12px 24px; border-bottom: 1px solid var(--border); transition: background 0.12s; }
 	li:hover { background: var(--accent); }
 	li.off .body { opacity: 0.45; }
 	.body { flex: 1; min-width: 0; }
 	.name { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 500; }
-	.meta { font-family: var(--mono); font-size: 10.5px; font-weight: 400; padding: 1px 6px; border: 1px solid var(--border); border-radius: var(--radius); color: var(--muted); }
+	.meta { font-family: var(--mono); font-size: 10.5px; font-weight: 400; padding: 1px 6px; border: 1px solid var(--input); border-radius: var(--radius); color: var(--muted); }
 	p { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 1; line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
 	.tool { font-size: 11px; font-weight: 400; color: var(--faint); }
 	.src { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
 	.empty { justify-content: center; padding: 48px; font-size: 13px; border: 0; }
-	.switch { flex: none; width: 36px; height: 20px; border: 0; padding: 2px; border-radius: 10px; background: #e2ded7; cursor: pointer; transition: background 0.15s; }
-	.switch span { display: block; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 15%); transition: transform 0.15s; }
+	.switch { flex: none; width: 36px; height: 20px; border: 0; padding: 2px; border-radius: 10px; background: var(--input); cursor: pointer; transition: background 0.15s; }
+	.switch span { display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--muted); box-shadow: 0 1px 2px rgb(0 0 0 / 30%); transition: transform 0.15s; }
 	.switch.on { background: var(--brand); }
-	.switch.on span { transform: translateX(16px); }
+	.switch.on span { transform: translateX(16px); background: var(--brand-ink); }
 </style>

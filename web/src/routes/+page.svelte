@@ -68,15 +68,15 @@
 	.stats div { display: flex; flex-direction: column; }
 	.stats b { font-size: 26px; font-weight: 500; letter-spacing: -0.03em; }
 	.stats span { font-family: var(--mono); font-size: 11px; opacity: 0.8; }
-	.cta { display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 20px; background: var(--brand-ink); color: var(--foreground); font-size: 14px; font-weight: 500; border-radius: var(--radius); text-decoration: none; }
+	.cta { display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 20px; background: var(--brand-ink); color: #1f1f1f; font-size: 14px; font-weight: 500; border-radius: var(--radius); text-decoration: none; }
 	.cta:hover { background: #fff; }
 	.heading { margin: 32px 0 12px; }
 	.err { color: var(--danger); }
 	.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); border-top: 1px solid var(--border); border-left: 1px solid var(--border); }
 	.card { display: flex; flex-direction: column; gap: 14px; padding: 20px; background: var(--card); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); color: inherit; text-decoration: none; transition: background 0.12s; }
-	.card:hover { background: var(--brand-tint); }
+	.card:hover { background: var(--hover); }
 	.top { display: flex; align-items: baseline; gap: 10px; }
-	.num { font-family: var(--mono); font-size: 12px; color: var(--brand); }
+	.num { font-family: var(--mono); font-size: 12px; color: var(--brand-text); }
 	strong { flex: 1; font-weight: 500; font-size: 15px; }
 	.status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
 	.chips { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -84,5 +84,5 @@
 	.empty { font-size: 12px; color: var(--faint); }
 	.missing { margin: 0; font-size: 13px; line-height: 1.8; color: var(--muted); }
 	.more { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--foreground); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--faint); }
-	.card:hover .more { color: var(--brand); text-decoration-color: var(--brand); }
+	.card:hover .more { color: var(--brand-text); text-decoration-color: var(--brand-text); }
 </style>

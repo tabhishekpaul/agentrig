@@ -49,10 +49,10 @@
 	nav { display: flex; flex-direction: column; gap: 1px; padding: 12px 8px; overflow-y: auto; }
 	.row { position: relative; display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border-radius: var(--radius); color: var(--foreground); text-decoration: none; font-size: 13px; transition: background 0.12s; }
 	.row:hover { background: var(--accent); }
-	.row.active { background: var(--selected); color: var(--brand); font-weight: 500; }
+	.row.active { background: var(--selected); color: var(--brand-text); font-weight: 500; }
 	.row.active::before { content: ''; position: absolute; left: 0; top: 7px; bottom: 7px; width: 2px; background: var(--brand); }
 	.row :global(.ico) { color: var(--muted); flex: none; }
-	.row.active :global(.ico) { color: var(--brand); }
+	.row.active :global(.ico) { color: var(--brand-text); }
 	.label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.count { font-family: var(--mono); font-size: 11px; color: var(--muted); }
 	.section { height: 28px; display: flex; align-items: center; margin-top: 16px; padding: 0 10px; }

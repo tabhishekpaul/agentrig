@@ -28,7 +28,7 @@ How toggles work:
 
 Changes apply to new sessions of each tool.
 
-The UI (light theme, crimson accent) uses Poppins and Lucide icons, both bundled into the binary: `arig` works fully offline.
+The UI (dark only, crimson accent) uses Poppins and Lucide icons, both bundled into the binary: `arig` works fully offline.
 
 Planned:
 - MCP server toggles
