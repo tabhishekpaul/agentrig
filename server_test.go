@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"testing/fstest"
 )
 
 func TestGuard(t *testing.T) {
@@ -36,5 +37,22 @@ func TestGuard(t *testing.T) {
 		if w.Code != c.want {
 			t.Errorf("%s: got %d, want %d", c.name, w.Code, c.want)
 		}
+	}
+}
+
+func TestSPAFallback(t *testing.T) {
+	ui := fstest.MapFS{"index.html": {Data: []byte("page")}, "icon.svg": {Data: []byte("<svg/>")}}
+	h := spa(ui)
+	for path, want := range map[string]int{"/": 200, "/library": 200, "/icon.svg": 200, "/favicon.ico": 404, "/missing.js": 404} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		if w.Code != want {
+			t.Errorf("%s: got %d, want %d", path, w.Code, want)
+		}
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/library", nil))
+	if w.Body.String() != "page" {
+		t.Errorf("/library should get index.html, got %q", w.Body.String())
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -172,6 +173,10 @@ func spa(ui fs.FS) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := strings.TrimPrefix(r.URL.Path, "/")
 		if _, err := fs.Stat(ui, p); p != "" && err != nil {
+			if path.Ext(p) != "" { // a missing file (e.g. /favicon.ico) must 404, not get the page
+				http.NotFound(w, r)
+				return
+			}
 			http.ServeFileFS(w, r, ui, "index.html")
 			return
 		}
