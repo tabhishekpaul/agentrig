@@ -1,0 +1,5 @@
+node_modules/
+web/build/
+web/.svelte-kit/
+/agentrig
+.DS_Store
