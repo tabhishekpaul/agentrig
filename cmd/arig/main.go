@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/tabhishekpaul/agentrig"
-	"github.com/tabhishekpaul/agentrig/projects"
 	"github.com/tabhishekpaul/agentrig/adapters"
 	"github.com/tabhishekpaul/agentrig/catalog"
 	"github.com/tabhishekpaul/agentrig/mcpserver"
+	"github.com/tabhishekpaul/agentrig/projects"
 )
 
 // version is set at release build time (-ldflags "-X main.version=v1.2.3").
