@@ -108,6 +108,11 @@ func mirror(src, dst, backup string, addOnly, dirsOnly bool) (int, error) {
 			if err != nil {
 				return err
 			}
+			if filepath.IsAbs(target) { // a Windows junction: never commit this machine's absolute path
+				if r, err := filepath.Rel(filepath.Dir(p), target); err == nil {
+					target = r
+				}
+			}
 			if cur, err := os.Readlink(out); err == nil && cur == target {
 				return nil
 			}

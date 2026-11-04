@@ -89,6 +89,9 @@ func Launch(port int, open bool) error {
 			log.Printf("library: %s", f)
 		}
 	}
+	if n := library.Relink(syncer.Home); n > 0 { // copies from before Windows junctions
+		log.Printf("library: %d skill copies turned into links", n)
+	}
 	go syncer.Loop(context.Background(), SyncEvery)
 	go gitsync.Providers(false) // warm: the Sync page opens without waiting on GitHub
 	if home, err := os.UserHomeDir(); err == nil {

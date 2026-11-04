@@ -17,7 +17,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -33,8 +32,8 @@ const (
 	copyMarker = ".arig-library" // inside copies made instead of links; holds the entry path
 )
 
-// copyLinks makes Link copy instead of symlinking (Windows; tests flip it).
-var copyLinks = runtime.GOOS == "windows"
+// copyLinks makes Link copy instead of linking (tests flip it).
+var copyLinks = false
 
 var (
 	segRe  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`)
@@ -259,14 +258,8 @@ func Link(at, target string) error {
 	if err != nil {
 		return err
 	}
-	if !copyLinks {
-		parent, err := filepath.EvalSymlinks(filepath.Dir(at))
-		if err != nil {
-			return err
-		}
-		if rel, err := filepath.Rel(parent, real); err == nil && os.Symlink(rel, at) == nil {
-			return nil
-		}
+	if !copyLinks && LinkDir(at, real) {
+		return nil
 	}
 	if err := copyTree(real, at, false); err != nil {
 		os.RemoveAll(at)

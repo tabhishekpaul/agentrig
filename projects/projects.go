@@ -16,7 +16,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -69,7 +68,7 @@ var (
 	configDir = func() string { d, _ := os.UserConfigDir(); return filepath.Join(d, "agentrig") }
 	newMarket = func() *market.Market { return market.New("") }
 	mu        sync.Mutex
-	copyLinks = runtime.GOOS == "windows" // tests flip it
+	copyLinks = false // tests flip it
 )
 
 // ValidSkill: skill ids are plain folder names.
@@ -520,7 +519,9 @@ func Apply(dir string, accept ...string) ([]Link, error) {
 		switch {
 		case !owned(dir, e):
 			// gone, or replaced by the user: forget it, leave the file alone
-		case e.Src != "" && want[e.Path] == e.Src && (e.Copy || target(e.Path, root, e.Src) == readlink(filepath.Join(dir, e.Path))):
+		// A copy (made when linking failed) is redone, so it becomes a link
+		// once links work and is never a stale copy.
+		case e.Src != "" && want[e.Path] == e.Src && !e.Copy && sameDir(filepath.Join(dir, e.Path), e.Src):
 			lock = append(lock, e)
 		default: // no longer listed, or now resolves to another version
 			if err := os.RemoveAll(filepath.Join(dir, e.Path)); err != nil {
@@ -549,16 +550,11 @@ func Apply(dir string, accept ...string) ([]Link, error) {
 	return status(dir, m, r, lock), errors.Join(errs...)
 }
 
-func readlink(p string) string { s, _ := os.Readlink(p); return s }
-
-// target is the relative symlink from the project path rel to src.
-func target(rel, root, src string) string {
-	real, err := filepath.EvalSymlinks(src)
-	if err != nil {
-		return ""
-	}
-	t, _ := filepath.Rel(filepath.Join(root, filepath.Dir(filepath.FromSlash(rel))), real)
-	return t
+// sameDir: a and b resolve to the same folder (symlink or junction alike).
+func sameDir(a, b string) bool {
+	ra, err := filepath.EvalSymlinks(a)
+	rb, err2 := filepath.EvalSymlinks(b)
+	return err == nil && err2 == nil && ra == rb
 }
 
 func link(dir, root, rel, src string) (lockEntry, error) {
@@ -575,16 +571,14 @@ func link(dir, root, rel, src string) (lockEntry, error) {
 	if r, err := filepath.Rel(root, parent); err != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) {
 		return lockEntry{}, fmt.Errorf("%s leaves the project; not linking", filepath.Dir(rel))
 	}
-	if t := target(rel, root, src); t != "" && !copyLinks {
-		if os.Symlink(t, p) == nil {
-			return lockEntry{Path: rel, Src: src}, nil
-		}
-	}
-	// Windows, or symlinks not allowed: copy.
 	srcFS, err := filepath.EvalSymlinks(src)
 	if err != nil {
 		return lockEntry{}, err
 	}
+	if !copyLinks && library.LinkDir(p, srcFS) {
+		return lockEntry{Path: rel, Src: src}, nil
+	}
+	// No symlink or junction possible: copy.
 	if err := os.CopyFS(p, os.DirFS(srcFS)); err != nil {
 		os.RemoveAll(p)
 		return lockEntry{}, err

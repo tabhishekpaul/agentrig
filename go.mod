@@ -2,6 +2,9 @@ module github.com/tabhishekpaul/agentrig
 
 go 1.27.1
 
+// Report Windows directory junctions as symlinks (library.LinkDir makes them).
+godebug winsymlink=0
+
 require (
 	github.com/ebitengine/purego v0.11.3
 	github.com/jchv/go-webview2 v0.0.0-20260205173254-56598839c808

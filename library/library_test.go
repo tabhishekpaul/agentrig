@@ -208,7 +208,7 @@ func TestLinkAndCopyFallback(t *testing.T) {
 
 	// Windows: a marked copy
 	copyLinks = true
-	defer func() { copyLinks = runtime.GOOS == "windows" }()
+	defer func() { copyLinks = false }()
 	cp := filepath.Join(home, ".cursor", "skills", "pdf")
 	if err := Link(cp, entry); err != nil {
 		t.Fatal(err)
