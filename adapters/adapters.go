@@ -3,15 +3,33 @@ package adapters
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"strings"
+	"sync"
 )
 
 type Item struct {
 	Kind        string `json:"kind"` // skill | plugin | mcp
+	ID          string `json:"id"`   // stable key used by Toggle
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	Path        string `json:"path,omitempty"`
+	Enabled     bool   `json:"enabled"`
+	Toggleable  bool   `json:"toggleable"`
+}
+
+var mu sync.Mutex // one config write at a time
+
+// Toggle enables or disables one item in one tool's native config.
+func Toggle(tool, kind, id string, enabled bool) error {
+	mu.Lock()
+	defer mu.Unlock()
+	switch tool {
+	case "claude":
+		return claudeToggle(defaultClaudePaths(), kind, id, enabled)
+	}
+	return fmt.Errorf("unknown tool %q", tool)
 }
 
 type Tool struct {

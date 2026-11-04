@@ -6,10 +6,18 @@ agentrig is a single binary. Run it and your browser opens a local dashboard sho
 
 ## Status
 
-Early. Today it **reads** your Claude Code setup (skills, plugins, MCP server names).
+Early. Today it works with Claude Code:
+- Lists your skills, plugins and MCP servers
+- Turns skills and plugins on and off from the Library page
+
+How toggles work:
+- **Skills**: a disabled skill is moved to `~/.claude/skills-disabled/` and moved back when enabled. Nothing is deleted.
+- **Plugins**: flips the plugin's entry in `enabledPlugins` in `~/.claude/settings.json`. Other settings are kept; top-level keys end up in alphabetical order.
+
+Changes apply to new Claude Code sessions.
 
 Planned:
-- Toggle items per tool
+- MCP server toggles
 - Sync your setup across machines through a private GitHub repo
 - More tools: Cursor, Codex, Gemini CLI
 - API keys kept in the OS keychain, never in the repo
