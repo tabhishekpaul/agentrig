@@ -9,6 +9,9 @@ import (
 	"time"
 
 	"github.com/tabhishekpaul/agentrig"
+	"github.com/tabhishekpaul/agentrig/adapters"
+	"github.com/tabhishekpaul/agentrig/catalog"
+	"github.com/tabhishekpaul/agentrig/mcpserver"
 )
 
 // version is set at release build time (-ldflags "-X main.version=v1.2.3").
@@ -20,6 +23,7 @@ it starts at login and runs in the background.
 Usage:
   arig              open the dashboard (starts the background server if needed)
   arig launch       same as arig
+  arig mcp          run the MCP server (stdio) that lets AI tools search and load your skills
   arig uninstall    stop the background server and stop starting it at login
   arig version      print the version
 `
@@ -44,6 +48,11 @@ func main() {
 				fail(err)
 			}
 			time.Sleep(3 * time.Second)
+		}
+	case "mcp": // stdout carries the protocol: errors go to stderr only
+		s := &mcpserver.Server{Entries: func() []catalog.Entry { return catalog.Local(adapters.Detect()) }, Version: version}
+		if err := s.Serve(os.Stdin, os.Stdout); err != nil {
+			fail(err)
 		}
 	case "uninstall":
 		if err := removeService(); err != nil {

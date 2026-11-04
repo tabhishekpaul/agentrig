@@ -12,9 +12,46 @@
 	const items = $derived(
 		store.tools.filter((t) => !tool || t.id === tool).flatMap((t) => t.items.map((i) => ({ i, t })))
 	);
-	const shown = $derived(
-		items.filter(({ i }) => (!kind || i.kind === kind) && (i.name + ' ' + (i.description ?? '')).toLowerCase().includes(q.toLowerCase()))
-	);
+	const matches = ({ i }) => (i.name + ' ' + (i.description ?? '')).toLowerCase().includes(q.toLowerCase());
+
+	// Skills view: two-level categories and ranked search, both from the catalog.
+	let cats = $state([]); // taxonomy from /api/categories
+	let catOf = $state({}); // skill id -> "top/sub"
+	let cat = $state(''); // '' | top | top/sub
+	let ranked = $state(null); // skill ids for q in rank order; null until the search answers
+	const skills = $derived(items.filter((x) => x.i.kind === 'skill'));
+	const inCat = (c, sel) => !sel || c === sel || c?.startsWith(sel + '/');
+	const catCount = (sel) => skills.filter((x) => inCat(catOf[x.i.id], sel)).length;
+	const skillRows = $derived.by(() => {
+		const rows = skills.filter((x) => inCat(catOf[x.i.id], cat));
+		if (!q.trim()) return rows;
+		if (!ranked) return rows.filter(matches);
+		const rank = new Map(ranked.map((id, n) => [id, n]));
+		return rows.filter((x) => rank.has(x.i.id)).sort((a, b) => rank.get(a.i.id) - rank.get(b.i.id));
+	});
+	const shown = $derived(kind === 'skill' ? skillRows : items.filter((x) => (!kind || x.i.kind === kind) && matches(x)));
+
+	Promise.all([api('categories'), api('skills')])
+		.then(([c, s]) => {
+			cats = c;
+			catOf = Object.fromEntries(s.map((e) => [e.id, e.category]));
+		})
+		.catch((e) => (error = e.message));
+
+	$effect(() => {
+		const term = q.trim();
+		ranked = null;
+		if (kind !== 'skill' || !term) return;
+		const t = setTimeout(async () => {
+			try {
+				const res = await api('skills?q=' + encodeURIComponent(term));
+				if (term === q.trim()) ranked = res.map((e) => e.id);
+			} catch (e) {
+				error = e.message;
+			}
+		}, 150);
+		return () => clearTimeout(t);
+	});
 	const tabs = [
 		{ id: '', label: 'All' },
 		{ id: 'skill', label: 'Skills' },
@@ -47,7 +84,7 @@
 	</div>
 	<label class="search">
 		<Search size={15} />
-		<input placeholder="Search {items.length} items" bind:value={q} />
+		<input placeholder={kind === 'skill' ? `Search ${skills.length} skills` : `Search ${items.length} items`} bind:value={q} />
 	</label>
 </header>
 
@@ -63,13 +100,33 @@
 </div>
 {#if error}<p class="err">{error}</p>{/if}
 
+<div class="split">
+{#if kind === 'skill'}
+	<nav class="cats" aria-label="Skill categories">
+		<button class:active={!cat} onclick={() => (cat = '')}>All skills <span class="tabular">{skills.length}</span></button>
+		{#each cats as c (c.id)}
+			{@const n = catCount(c.id)}
+			{#if n}
+				<button class:active={cat === c.id} aria-expanded={inCat(cat, c.id)} onclick={() => (cat = c.id)}>{c.name} <span class="tabular">{n}</span></button>
+				{#if inCat(cat, c.id)}
+					{#each c.subs as sub (sub.id)}
+						{@const m = catCount(sub.id)}
+						{#if m}
+							<button class="sub" class:active={cat === sub.id} onclick={() => (cat = sub.id)}>{sub.id.split('/')[1]} <span class="tabular">{m}</span></button>
+						{/if}
+					{/each}
+				{/if}
+			{/if}
+		{/each}
+	</nav>
+{/if}
 <ul>
 	{#each shown as { i, t } (t.id + i.kind + i.id)}
 		<li class:off={!i.enabled}>
 			<div class="body">
 				<div class="name">
 					<span>{i.name}</span>
-					<code class="meta">{i.kind}</code>
+					<code class="meta">{kind === 'skill' ? catOf[i.id] ?? i.kind : i.kind}</code>
 					{#if !tool}<span class="tool"><ToolIcon id={t.id} size={12} />{t.name}</span>{/if}
 				</div>
 				{#if i.description}<p>{i.description}</p>{/if}
@@ -90,6 +147,7 @@
 		<li class="empty muted">{store.loaded ? 'Nothing matches.' : 'Scanning…'}</li>
 	{/each}
 </ul>
+</div>
 
 <style>
 	header { flex: none; display: flex; align-items: flex-end; gap: 16px; padding: 20px 24px 16px; border-bottom: 1px solid var(--border); }
@@ -108,6 +166,14 @@
 	.tabs button.active span { color: var(--brand-text); }
 	.hint { font-family: var(--mono); font-size: 11px; color: var(--faint); }
 	.err { margin: 12px 24px 0; padding: 10px 12px; font-size: 13px; color: var(--brand-text); background: var(--brand-tint); border-left: 2px solid var(--brand); }
+	.split { flex: 1; min-height: 0; display: flex; }
+	.cats { flex: none; width: 200px; display: flex; flex-direction: column; gap: 1px; padding: 12px 8px; overflow-y: auto; border-right: 1px solid var(--border); }
+	.cats button { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 30px; padding: 0 10px; border: 0; border-radius: var(--radius); background: none; font-size: 13px; color: var(--foreground); text-align: left; cursor: pointer; }
+	.cats button.sub { height: 28px; padding-left: 22px; font-size: 12.5px; color: var(--muted); }
+	.cats button span { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+	.cats button:hover { background: var(--accent); color: var(--foreground); }
+	.cats button.active { background: var(--selected); color: var(--brand-text); font-weight: 500; }
+	.cats button.active span { color: var(--brand-text); }
 	ul { list-style: none; margin: 0; padding: 0 0 16px; overflow-y: auto; flex: 1; }
 	li { display: flex; align-items: center; gap: 16px; padding: 12px 24px; border-bottom: 1px solid var(--border); transition: background 0.12s; }
 	li:hover { background: var(--accent); }

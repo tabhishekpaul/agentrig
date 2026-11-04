@@ -1,7 +1,7 @@
 <script>
 	import '../app.css';
 	import { page } from '$app/state';
-	import { House, Library, RefreshCw } from '@lucide/svelte';
+	import { Bot, House, Library, RefreshCw } from '@lucide/svelte';
 	import Logo from '../lib/Logo.svelte';
 	import ToolIcon from '../lib/ToolIcon.svelte';
 	import { store, load } from '../lib/tools.svelte.js';
@@ -12,7 +12,8 @@
 	const nav = [
 		{ href: '/', label: 'Home', icon: House },
 		{ href: '/library', label: 'Library', icon: Library },
-		{ href: '/sync', label: 'Sync', icon: RefreshCw }
+		{ href: '/sync', label: 'Sync', icon: RefreshCw },
+		{ href: '/mcp', label: 'AI access', icon: Bot }
 	];
 </script>
 
