@@ -41,7 +41,13 @@ The UI (dark only, crimson accent) uses Poppins, Lucide icons and each tool's br
 
 ## Use it as an app
 
-`arig app` opens the dashboard in its own window instead of a browser tab. On macOS it's a native window (the system WebKit), and arig adds **Agentrig** to `~/Applications`, so you can open it from Spotlight, Launchpad or the Dock. On Windows and Linux it opens an app window (no tabs or address bar) in Edge or Chrome. Links to other sites open in your browser. The browser keeps working too: http://arig.localhost:7377.
+`arig app` opens the dashboard in its own window instead of a browser tab, styled like a Mac app on every platform:
+
+- **macOS**: a native window (system WebKit) with the window buttons inside the sidebar header. arig adds **Agentrig** to `~/Applications`, so you can open it from Spotlight, Launchpad or the Dock.
+- **Windows**: a frameless WebView2 window with Mac-style buttons at the top right (minimize, maximize, close).
+- **Linux**: the same frameless window using WebKitGTK when it's installed (`libwebkit2gtk-4.1`); otherwise an app window in Chrome or Edge.
+
+arig is pure Go (no cgo): the system webview is loaded when the window opens, so the same binary also runs on machines without a desktop. Links to other sites open in your browser, and the browser keeps working too: http://arig.localhost:7377.
 
 ## Let your AI find skills (`arig mcp`)
 
