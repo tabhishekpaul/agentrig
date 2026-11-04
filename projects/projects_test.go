@@ -153,6 +153,7 @@ func TestCopyFallbackIsOwned(t *testing.T) {
 	e := lockEntry{Path: ".claude/skills/a", Copy: true}
 	os.CopyFS(filepath.Join(proj, e.Path), os.DirFS(filepath.Join(skills, "a")))
 	os.WriteFile(filepath.Join(proj, e.Path, copyMarker), nil, 0o644)
+	os.MkdirAll(filepath.Join(proj, Folder), 0o755)
 	os.WriteFile(filepath.Join(proj, lockFile), []byte(`[{"path":".claude/skills/a","copy":true}]`), 0o644)
 	if _, err := Apply(proj); err != nil { // empty manifest
 		t.Fatal(err)
@@ -197,5 +198,57 @@ func TestValidation(t *testing.T) {
 	Remove(real)
 	if len(List()) != 0 {
 		t.Error("not removed")
+	}
+}
+
+func TestProjectSkillsAndMigration(t *testing.T) {
+	proj, _ := setup(t)
+	// an older project: manifest and lock at the top level
+	os.WriteFile(filepath.Join(proj, oldManifest), []byte(`{"skills":["a"]}`), 0o644)
+	own := filepath.Join(proj, LocalSkills, "house-style")
+	os.MkdirAll(own, 0o755)
+	os.WriteFile(filepath.Join(own, "SKILL.md"), []byte("---\nname: house-style\n---\n"), 0o644)
+
+	links, err := Apply(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]Link{}
+	for _, l := range links {
+		if l.Tool == "claude" {
+			got[l.Skill] = l
+		}
+	}
+	if got["a"].State != "linked" || got["a"].Local {
+		t.Errorf("global skill: %+v", got["a"])
+	}
+	if l := got["house-style"]; l.State != "linked" || !l.Local {
+		t.Errorf("project skill: %+v", l)
+	}
+	if b, err := os.ReadFile(filepath.Join(proj, ".claude/skills/house-style/SKILL.md")); err != nil || !strings.Contains(string(b), "house-style") {
+		t.Error("project skill not reachable through the link")
+	}
+	if t2, _ := os.Readlink(filepath.Join(proj, ".claude/skills/house-style")); t2 != "../../.arig/skills/house-style" {
+		t.Errorf("project skill link should stay inside the repo: %q", t2)
+	}
+
+	// pinning moves the old manifest into .arig/
+	if _, err := Edit(proj, true, "a"); err != nil {
+		t.Fatal(err)
+	}
+	if exists(filepath.Join(proj, oldManifest)) || !exists(filepath.Join(proj, ManifestFile)) {
+		t.Error("manifest not migrated into .arig/")
+	}
+	if !exists(filepath.Join(proj, lockFile)) || exists(filepath.Join(proj, oldLock)) {
+		t.Error("lock should live in .arig/")
+	}
+
+	// removing the project skill folder unlinks it on the next apply
+	os.RemoveAll(own)
+	if _, err := Apply(proj); err != nil {
+		t.Fatal(err)
+	}
+	if exists(filepath.Join(proj, ".claude/skills/house-style")) {
+		t.Error("stale project-skill link left behind")
 	}
 }

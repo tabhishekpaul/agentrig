@@ -25,9 +25,9 @@ Usage:
   arig              open the dashboard (starts the background server if needed)
   arig launch       same as arig
   arig app          open the dashboard in its own window instead of the browser
-  arig add <skill>...     pin skills to this project (.arig.json) and link them in
+  arig add <skill>...     pin skills to this project (.arig/arig.json) and link them in
   arig remove <skill>...  unpin skills from this project and unlink them
-  arig apply              link this project's .arig.json skills into every tool
+  arig apply              link this project's skills (.arig/) into every tool
   arig mcp          run the MCP server (stdio) that lets AI tools search and load your skills
   arig uninstall    stop the background server and stop starting it at login
   arig version      print the version
@@ -100,7 +100,7 @@ func fail(err error) {
 	os.Exit(1)
 }
 
-// projectCmd edits the current folder's .arig.json, registers the folder as a
+// projectCmd edits the current folder's .arig/arig.json, registers the folder as a
 // project, and links its skills into every tool.
 func projectCmd(cmd string, args []string) {
 	if cmd != "apply" && len(args) == 0 {

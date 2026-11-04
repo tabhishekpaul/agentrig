@@ -1,5 +1,6 @@
-// Package projects pins skills to a project: a committed .arig.json lists the
-// skills, and Apply links each one from the global skill folder into every
+// Package projects pins skills to a project. A committed .arig/ folder (like
+// .claude/, but for every tool) holds arig.json, which lists global skills to
+// pin, and skills/, the project's own skills. Apply links each one into every
 // tool's project-level skills folder. Only links arig made are ever removed.
 package projects
 
@@ -19,9 +20,13 @@ import (
 )
 
 const (
-	ManifestFile = ".arig.json"
-	lockFile     = ".arig.lock" // machine-local record of what arig created
-	copyMarker   = ".arig-copy" // dropped inside copies (no symlinks), so copies are recognisable too
+	Folder       = ".arig"
+	ManifestFile = ".arig/arig.json"
+	LocalSkills  = ".arig/skills"    // the project's own skills, committed with it
+	lockFile     = ".arig/lock.json" // machine-local record of what arig created (git-ignored)
+	copyMarker   = ".arig-copy"      // dropped inside copies (no symlinks), so copies are recognisable too
+	oldManifest  = ".arig.json"      // before the .arig/ folder; migrated on write
+	oldLock      = ".arig.lock"
 )
 
 // Dirs is each tool's project-level skills folder (<dir>/<skill>/SKILL.md).
@@ -66,6 +71,9 @@ func ReadManifest(dir string) (Manifest, error) {
 	var m Manifest
 	b, err := os.ReadFile(filepath.Join(dir, ManifestFile))
 	if errors.Is(err, os.ErrNotExist) {
+		b, err = os.ReadFile(filepath.Join(dir, oldManifest))
+	}
+	if errors.Is(err, os.ErrNotExist) {
 		return Manifest{Skills: []string{}}, nil
 	}
 	if err == nil {
@@ -102,15 +110,53 @@ func WriteManifest(dir string, m Manifest) error {
 		m.Skills = []string{}
 	}
 	b, _ := json.MarshalIndent(m, "", "  ")
-	return os.WriteFile(filepath.Join(dir, ManifestFile), append(b, '\n'), 0o644)
+	if err := os.MkdirAll(filepath.Join(dir, Folder), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, ManifestFile), append(b, '\n'), 0o644); err != nil {
+		return err
+	}
+	_ = os.Remove(filepath.Join(dir, oldManifest)) // moved into .arig/
+	return nil
+}
+
+// localSkills lists the project's own skills: .arig/skills/<id>/SKILL.md.
+func localSkills(dir string) map[string]string {
+	out := map[string]string{}
+	entries, _ := os.ReadDir(filepath.Join(dir, LocalSkills))
+	for _, e := range entries {
+		p := filepath.Join(dir, LocalSkills, e.Name())
+		if e.IsDir() && ValidSkill(e.Name()) && exists(filepath.Join(p, "SKILL.md")) {
+			out[e.Name()] = p
+		}
+	}
+	return out
+}
+
+// effective is what a project uses: the pinned global skills plus every
+// skill in .arig/skills (a project skill wins over a global one of the same
+// name), with where each comes from.
+func effective(dir string, m Manifest) (Manifest, map[string]string) {
+	src := global()
+	local := localSkills(dir)
+	m.Skills = slices.Clone(m.Skills)
+	for id, p := range local {
+		src[id] = p
+		if !slices.Contains(m.Skills, id) {
+			m.Skills = append(m.Skills, id)
+		}
+	}
+	slices.Sort(m.Skills)
+	return m, src
 }
 
 // Link is one skill in one tool's folder.
 type Link struct {
 	Skill string `json:"skill"`
 	Tool  string `json:"tool"`
-	Path  string `json:"path"`  // relative to the project
-	State string `json:"state"` // linked | missing | not-installed | conflict (a file arig didn't make)
+	Path  string `json:"path"`            // relative to the project
+	State string `json:"state"`           // linked | missing | not-installed | conflict (a file arig didn't make)
+	Local bool   `json:"local,omitempty"` // from the project's own .arig/skills
 }
 
 type lockEntry struct {
@@ -120,7 +166,10 @@ type lockEntry struct {
 
 func readLock(dir string) []lockEntry {
 	var l []lockEntry
-	b, _ := os.ReadFile(filepath.Join(dir, lockFile))
+	b, err := os.ReadFile(filepath.Join(dir, lockFile))
+	if err != nil {
+		b, _ = os.ReadFile(filepath.Join(dir, oldLock))
+	}
 	_ = json.Unmarshal(b, &l)
 	return l
 }
@@ -154,7 +203,8 @@ func Status(dir string) ([]Link, error) {
 	if err != nil {
 		return nil, err
 	}
-	return status(dir, m, global(), readLock(dir)), nil
+	m, src := effective(dir, m)
+	return status(dir, m, src, readLock(dir)), nil
 }
 
 func status(dir string, m Manifest, glob map[string]string, lock []lockEntry) []Link {
@@ -166,7 +216,8 @@ func status(dir string, m Manifest, glob map[string]string, lock []lockEntry) []
 	for _, t := range tools(m) {
 		for _, s := range m.Skills {
 			rel := filepath.ToSlash(filepath.Join(toolDir(t), s))
-			l := Link{Skill: s, Tool: t, Path: rel, State: "missing"}
+			l := Link{Skill: s, Tool: t, Path: rel, State: "missing",
+				Local: strings.HasPrefix(filepath.ToSlash(glob[s]), filepath.ToSlash(filepath.Join(dir, LocalSkills))+"/")}
 			switch {
 			case ours[rel]:
 				l.State = "linked"
@@ -215,7 +266,7 @@ func Apply(dir string) ([]Link, error) {
 	if err != nil {
 		return nil, err
 	}
-	glob := global()
+	m, glob := effective(dir, m)
 	want := map[string]bool{}
 	for _, l := range status(dir, m, glob, nil) {
 		want[l.Path] = true
@@ -303,6 +354,7 @@ func link(dir, root, rel, src string) (lockEntry, error) {
 }
 
 func writeLock(dir string, l []lockEntry) error {
+	_ = os.Remove(filepath.Join(dir, oldLock)) // moved into .arig/
 	p := filepath.Join(dir, lockFile)
 	if len(l) == 0 {
 		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -311,6 +363,9 @@ func writeLock(dir string, l []lockEntry) error {
 		return nil
 	}
 	b, _ := json.MarshalIndent(l, "", "  ")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return err
+	}
 	return os.WriteFile(p, append(b, '\n'), 0o644)
 }
 
@@ -358,19 +413,34 @@ func ignore(dir string, m Manifest) error {
 	return os.WriteFile(p, []byte(text), 0o644)
 }
 
-// Skills returns the catalog entries for the skills a project lists that are
-// installed globally on this machine (missing ones are left out).
+// Skills returns the catalog entries a project uses: its own .arig/skills
+// plus the pinned global skills installed on this machine (missing ones are
+// left out).
 func Skills(dir string) ([]catalog.Entry, error) {
 	m, err := ReadManifest(dir)
 	if err != nil {
 		return nil, err
 	}
+	local := localSkills(dir)
 	var out []catalog.Entry
+	for id, p := range local {
+		fm := adapters.Frontmatter(filepath.Join(p, "SKILL.md"))
+		name := fm["name"]
+		if name == "" {
+			name = id
+		}
+		cat := fm["category"]
+		if !catalog.Valid(cat) {
+			cat = catalog.Classify(name, fm["description"])
+		}
+		out = append(out, catalog.Entry{ID: id, Name: name, Description: fm["description"], Category: cat, Path: p})
+	}
 	for _, e := range catalog.Local(detect()) {
-		if slices.Contains(m.Skills, e.ID) {
+		if _, own := local[e.ID]; !own && slices.Contains(m.Skills, e.ID) {
 			out = append(out, e)
 		}
 	}
+	slices.SortFunc(out, func(a, b catalog.Entry) int { return strings.Compare(a.ID, b.ID) })
 	return out, nil
 }
 

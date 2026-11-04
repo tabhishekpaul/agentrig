@@ -10,7 +10,7 @@ agentrig ships as a single binary, `arig`. Run it once and the dashboard stays o
 - **Know what it costs.** Every enabled skill is loaded into every message. Insights estimates the tokens per tool, shows which skills you actually use (read locally from your own history), and turns off the unused ones in one click, with undo.
 - **Let your AI pick skills itself.** `arig mcp` lets any MCP-capable tool search and load the right skill when a task needs it, so you can keep only a few enabled.
 - **Install safely.** Search and install from the [skills.sh](https://skills.sh) registry. arig flags skills that ship scripts, use the network or pipe downloads into a shell, and shows a diff before any update.
-- **Per-project skills** in a committed `.arig.json`, **packs** you switch together, **profiles**, and a **studio** to write, draft with your own AI, export as a Claude Code plugin, or publish.
+- **Per-project skills** in a committed `.arig/` folder (like `.claude/`, for every tool), **packs** you switch together, **profiles**, and a **studio** to write, draft with your own AI, export as a Claude Code plugin, or publish.
 - **Same setup on every computer** through a private git repo you own. API keys and `.env` files never leave your machine, and nothing is tracked.
 
 ## Supported tools

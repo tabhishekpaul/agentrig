@@ -132,6 +132,9 @@
 	const stateOf = (skill, tool) => links.find((l) => l.skill === skill && l.tool === tool);
 	const toolName = (id) => avail.tools.find((t) => t.id === id)?.name ?? id;
 	const pending = $derived(links.some((l) => l.state === 'missing'));
+	// The project's own skills (.arig/skills) come from the folder, not the pin list.
+	const localIds = $derived([...new Set(links.filter((l) => l.local).map((l) => l.skill))]);
+	const rows = $derived([...localIds, ...(manifest?.skills ?? []).filter((s) => !localIds.includes(s))]);
 	const label = { linked: 'linked', missing: 'not linked yet', 'not-installed': 'skill not installed', conflict: 'your own file is here' };
 </script>
 
@@ -143,7 +146,7 @@
 		</div>
 	</header>
 	<div class="body">
-		<p class="lead">Pin skills to a project. arig writes the list to <code>.arig.json</code> (commit it) and links each skill into every tool's project folder.</p>
+		<p class="lead">Give a project its skills. Pinned skills are listed in <code>.arig/arig.json</code>, and the project's own skills live in <code>.arig/skills/</code>. Commit the <code>.arig/</code> folder; arig links every skill into each tool's project folder (<code>.claude/skills</code>, <code>.agents/skills</code>, …).</p>
 		<div class="actions">
 			<button class="primary" disabled={busy === 'pick'} onclick={chooseFolder}>
 				<FolderOpen size={15} /> {busy === 'pick' ? 'Waiting for the folder dialog…' : 'Choose folder…'}
@@ -240,10 +243,10 @@
 			</div>
 
 			<ul class="rows">
-				{#each manifest.skills as s (s)}
+				{#each rows as s (s)}
 					<li class="skill">
 						<div class="who">
-							<strong>{s}</strong>
+							<strong>{s}{#if localIds.includes(s)}<code class="own">.arig/skills</code>{/if}</strong>
 							{#if desc(s)}<span>{desc(s)}</span>{/if}
 							<div class="states">
 								{#each active as t (t)}
@@ -252,13 +255,15 @@
 								{/each}
 							</div>
 						</div>
-						<button class="icon" onclick={() => unpin(s)} aria-label="Unpin {s}"><X size={15} /></button>
+						{#if !localIds.includes(s)}
+							<button class="icon" onclick={() => unpin(s)} aria-label="Unpin {s}"><X size={15} /></button>
+						{/if}
 					</li>
 				{:else}
-					<li class="empty muted">No skills pinned. Search above to add some.</li>
+					<li class="empty muted">No skills yet. Search above to pin installed ones, or add the project's own skills to <code>.arig/skills/</code>.</li>
 				{/each}
 			</ul>
-			<p class="hint">{pending ? 'Press Apply to link the changes. ' : ''}Links point at your installed skills and are git-ignored; only .arig.json is meant to be committed. Apply never removes files arig didn't make.</p>
+			<p class="hint">{pending ? 'Press Apply to link the changes. ' : ''}Links point at your installed skills and are git-ignored; commit the .arig/ folder (its lock.json stays local). Apply never removes files arig didn't make.</p>
 		{/if}
 	</div>
 {/if}
@@ -272,6 +277,7 @@
 	.body { padding: 24px; overflow-y: auto; max-width: 860px; }
 	.lead { margin: 0 0 16px; font-size: 15px; line-height: 1.6; }
 	code, .mono { font-family: var(--mono); font-size: 12px; }
+	.own { margin-left: 8px; padding: 1px 6px; border: 1px solid var(--input); border-radius: var(--radius); font-size: 10.5px; font-weight: 400; color: var(--brand-text); }
 	.heading { margin: 24px 0 10px; }
 	.heading:first-of-type { margin-top: 0; }
 	.heading span { color: var(--faint); margin-left: 4px; }
