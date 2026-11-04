@@ -163,12 +163,17 @@ func (s *Syncer) Setup(providerID string, create bool) (Config, error) {
 			if !create {
 				return Config{}, fmt.Errorf("no %s repo on %s yet", RepoName, p.Name)
 			}
+			s.step(fmt.Sprintf("Creating the private repo on %s…", p.Name))
 			if err := h.create(); err != nil {
+				s.step("")
 				return Config{}, fmt.Errorf("couldn't create %s: %w", RepoName, err)
 			}
-			if p = h.probe(); p.Repo == nil {
-				return Config{}, fmt.Errorf("created %s but can't find it: %s", RepoName, p.Error)
+			repo, err := h.find(p.User) // one lookup for the URL, not a full re-probe
+			if err != nil || repo == nil {
+				s.step("")
+				return Config{}, fmt.Errorf("created %s but can't find it: %v", RepoName, err)
 			}
+			p.Repo = repo
 		}
 		return s.Connect(p.Repo.URL)
 	}

@@ -25,9 +25,21 @@
 	checkProviders();
 	const usable = $derived((providers ?? []).filter((p) => p.loggedIn));
 
+	let phase = $state('');
+	let elapsed = $state(0);
+
 	async function act(label, path, body) {
 		busy = label;
 		error = '';
+		phase = '';
+		elapsed = 0;
+		const started = Date.now();
+		// The request blocks until the sync finishes; meanwhile show which step it's on.
+		const poll = setInterval(async () => {
+			elapsed = Math.round((Date.now() - started) / 1000);
+			const s = await api('sync').catch(() => null);
+			if (s?.phase) phase = s.phase;
+		}, 700);
 		try {
 			status = await api(path, {
 				method: 'POST',
@@ -39,7 +51,9 @@
 			error = e.message.replace(/^\d+ /, '');
 			status = await api('sync').catch(() => status);
 		}
+		clearInterval(poll);
 		busy = '';
+		phase = '';
 	}
 
 	const ago = (t) => {
@@ -142,6 +156,9 @@
 				<button class="primary" disabled={!repo.trim() || busy}>{busy === 'connect' ? 'Connecting…' : 'Connect'}</button>
 			</form>
 		{/if}
+		{#if busy && busy !== 'disconnect'}
+			<p class="progress"><span class="spin"><RefreshCw size={13} /></span>{phase || 'Starting…'}<span class="secs">{elapsed}s</span></p>
+		{/if}
 		<p class="hint">Joining never deletes anything: the first sync only adds this machine's skills to the repo.</p>
 	{:else}
 		<div class="grid">
@@ -163,6 +180,9 @@
 				<Unplug size={15} /> Disconnect
 			</button>
 		</div>
+		{#if busy && busy !== 'disconnect'}
+			<p class="progress"><span class="spin"><RefreshCw size={13} /></span>{phase || 'Starting…'}<span class="secs">{elapsed}s</span></p>
+		{/if}
 		<p class="hint">Syncs automatically every 15 minutes while arig runs. Anything a sync replaces on this machine is backed up first.</p>
 	{/if}
 
@@ -221,6 +241,9 @@
 	.mono { font-family: var(--mono); font-size: 12.5px; display: block; }
 	.dot.bad { background: var(--brand-text); }
 	.actions { display: flex; gap: 8px; margin-top: 20px; }
+	.progress { display: flex; align-items: center; gap: 8px; margin: 16px 0 0; font-size: 13px; color: var(--foreground); }
+	.progress .spin :global(svg) { color: var(--brand-text); }
+	.secs { font-family: var(--mono); font-size: 11px; color: var(--faint); }
 	.spin { display: inline-flex; animation: spin 0.9s linear infinite; }
 	@keyframes spin { to { transform: rotate(360deg); } }
 	.err { margin: 16px 0 0; padding: 10px 12px; font-size: 13px; color: var(--brand-text); background: var(--brand-tint); border-left: 2px solid var(--brand); white-space: pre-wrap; word-break: break-word; }

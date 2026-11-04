@@ -8,6 +8,11 @@ import (
 	"github.com/tabhishekpaul/agentrig/gitsync"
 )
 
+type syncStatus struct {
+	gitsync.Config
+	Phase string `json:"phase,omitempty"` // live progress of a running sync
+}
+
 // syncView is what the UI sees: the repo URL with any embedded token hidden.
 func syncView(c gitsync.Config) gitsync.Config {
 	c.Repo = gitsync.Redact(c.Repo)
@@ -24,7 +29,7 @@ func syncReply(w http.ResponseWriter, c gitsync.Config, err error) {
 
 func registerAPI(mux *http.ServeMux, s *gitsync.Syncer) {
 	mux.HandleFunc("GET /api/sync", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, syncView(s.Status()))
+		writeJSON(w, syncStatus{syncView(s.Status()), s.Phase()})
 	})
 	mux.HandleFunc("POST /api/sync/connect", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {

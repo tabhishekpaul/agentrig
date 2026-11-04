@@ -13,12 +13,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -53,6 +55,26 @@ type Syncer struct {
 	Dir   string // agentrig's own folder: config.json, repo/, backup/
 	State State
 	mu    sync.Mutex
+
+	phase      atomic.Pointer[string] // what a running sync is doing, for the UI
+	phaseStart time.Time
+}
+
+// Phase is what the sync in progress is doing right now ("" when idle).
+func (s *Syncer) Phase() string {
+	if p := s.phase.Load(); p != nil {
+		return *p
+	}
+	return ""
+}
+
+// step records progress for the UI and logs how long the previous step took.
+func (s *Syncer) step(what string) {
+	if prev := s.Phase(); prev != "" {
+		log.Printf("sync: %s (%s)", prev, time.Since(s.phaseStart).Round(time.Millisecond))
+	}
+	s.phase.Store(&what)
+	s.phaseStart = time.Now()
 }
 
 func (s *Syncer) repo() string       { return filepath.Join(s.Dir, "repo") }
@@ -90,9 +112,11 @@ func (s *Syncer) Connect(repo string) (Config, error) {
 		s.mu.Unlock()
 		return Config{}, err
 	}
+	s.step("Downloading the repo…")
 	_, err := git(s.Dir, "clone", "--", repo, "repo")
 	s.mu.Unlock()
 	if err != nil {
+		s.step("")
 		return Config{}, fmt.Errorf("couldn't clone %s: %w", Redact(repo), err)
 	}
 	host, _ := os.Hostname()
@@ -121,6 +145,7 @@ func (s *Syncer) Run() (Config, error) {
 		return c, errors.New("sync isn't set up")
 	}
 	result, err := s.run(c)
+	s.step("")
 	c.LastSync = time.Now()
 	c.LastResult, c.LastError = result, ""
 	if err != nil {
@@ -146,6 +171,7 @@ func (s *Syncer) run(c Config) (string, error) {
 	// last sync, so a path missing locally was deleted here — except on the
 	// first sync, which only adds (joining must never delete other machines' work).
 	first := c.LastSync.IsZero()
+	s.step("Collecting this computer's skills…")
 	up := 0
 	for _, d := range Dirs {
 		src := filepath.Join(s.Home, d)
@@ -163,13 +189,23 @@ func (s *Syncer) run(c Config) (string, error) {
 			return "", err
 		}
 	}
+	s.step(fmt.Sprintf("Saving %d changes…", up))
 	if err := commit(r, "arig: "+c.Machine); err != nil {
 		return "", err
 	}
 
 	// 2. merge what other machines pushed
-	if out, _ := git(r, "ls-remote", "--heads", "origin", branch); out != "" {
-		if _, err := git(r, "pull", "--no-rebase", "--no-edit", "-X", "ours", "origin", branch); err != nil {
+	s.step("Getting changes from your other computers…")
+	// One network round trip (fetch), then merge locally. A fresh, empty
+	// remote has no branch yet: the fetch succeeds and there's nothing to merge.
+	if _, err := git(r, "fetch", "origin"); err != nil {
+		return "", err
+	}
+	remote := "origin/" + branch
+	hasRemote := false
+	if _, err := git(r, "rev-parse", "--verify", "--quiet", remote); err == nil {
+		hasRemote = true
+		if _, err := git(r, "merge", "--no-edit", "-X", "ours", remote); err != nil {
 			if err := resolveOurs(r, c.Machine, err); err != nil {
 				return "", fmt.Errorf("merge failed: %w", err)
 			}
@@ -177,6 +213,7 @@ func (s *Syncer) run(c Config) (string, error) {
 	}
 
 	// 3. repo → this machine, keeping a copy of anything replaced
+	s.step("Applying changes on this computer…")
 	backup := filepath.Join(s.Dir, "backup", time.Now().Format("2006-01-02T15-04-05"))
 	down := 0
 	for _, d := range Dirs {
@@ -203,7 +240,13 @@ func (s *Syncer) run(c Config) (string, error) {
 		}
 	}
 
-	// 4. publish
+	// 4. publish, unless the remote already has everything (saves a round trip)
+	if hasRemote {
+		if ahead, _ := git(r, "rev-list", "--count", remote+"..HEAD"); ahead == "0" {
+			return fmt.Sprintf("%d sent, %d received", up, down), nil
+		}
+	}
+	s.step(fmt.Sprintf("Uploading %d changes…", up))
 	if _, err := git(r, "push", "-u", "origin", branch); err != nil {
 		return "", err
 	}
