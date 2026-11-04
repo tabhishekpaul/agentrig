@@ -11,6 +11,7 @@ import (
 
 	"github.com/tabhishekpaul/agentrig/adapters"
 	"github.com/tabhishekpaul/agentrig/catalog"
+	"github.com/tabhishekpaul/agentrig/library"
 )
 
 // isolate points HOME (and so every tool dir and the git config) at a temp dir.
@@ -31,20 +32,42 @@ func TestCreateLinksAndRefusesOverwrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dir != filepath.Join(home, ".agents/skills/my-skill") {
-		t.Fatalf("canonical dir %s", dir)
+	if !strings.Contains(dir, filepath.FromSlash(".arig/library/my-skill/")) {
+		t.Fatalf("library entry %s", dir)
 	}
-	// Claude sees it through a relative link; Codex reads ~/.agents/skills itself.
+	// every chosen tool sees it through a relative link into the library
 	link := filepath.Join(home, ".claude/skills/my-skill")
-	if target, err := os.Readlink(link); err != nil || filepath.IsAbs(target) {
-		t.Fatalf("want relative link, got %q %v", target, err)
+	for _, l := range []string{link, filepath.Join(home, ".codex/skills/my-skill")} {
+		if target, err := os.Readlink(l); err != nil || filepath.IsAbs(target) || !library.IsLibraryLink(l) {
+			t.Fatalf("want relative library link at %s, got %q %v", l, target, err)
+		}
 	}
 	fm := adapters.Frontmatter(filepath.Join(link, "SKILL.md"))
 	if fm["name"] != "my-skill" || fm["category"] != "coding/git" || fm["tags"] != "[git, x]" || !strings.Contains(fm["description"], "things") {
 		t.Fatalf("frontmatter %v", fm)
 	}
-	if exists(filepath.Join(home, ".codex/skills/my-skill")) {
-		t.Fatal("codex got a redundant link")
+	if exists(filepath.Join(home, ".agents/skills/my-skill")) {
+		t.Fatal("codex got a second link")
+	}
+	// no tools chosen: linked into the tool-neutral ~/.agents/skills
+	if _, err := Create(home, dirs, Skill{ID: "loner", Description: "d"}); err != nil || !library.IsLibraryLink(filepath.Join(home, ".agents/skills/loner")) {
+		t.Fatal("no-tool skill not linked into ~/.agents/skills", err)
+	}
+
+	// editing makes a new version; both tool links move, the old entry stays as it was
+	if err := Save(link, "---\nname: my-skill\n---\nv2\n", dirs); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "SKILL.md")); strings.Contains(string(b), "v2") {
+		t.Fatal("library entry edited in place")
+	}
+	for _, l := range []string{link, filepath.Join(home, ".codex/skills/my-skill")} {
+		if b, _ := os.ReadFile(filepath.Join(l, "SKILL.md")); !strings.Contains(string(b), "v2") {
+			t.Fatalf("%s not moved to the new version", l)
+		}
+	}
+	if len(library.Versions("my-skill")) != 2 {
+		t.Fatal("want two versions")
 	}
 	ids := []string{}
 	for _, e := range catalog.Local(adapters.Detect()) {
@@ -77,7 +100,7 @@ func TestTogglePack(t *testing.T) {
 	if _, err := TogglePack(p, dirs, false); err != nil {
 		t.Fatal(err)
 	}
-	for _, rel := range []string{".claude/skills-disabled/a", ".claude/skills-disabled/b", ".agents/skills-disabled/a"} {
+	for _, rel := range []string{".claude/skills-disabled/a", ".claude/skills-disabled/b"} {
 		if !exists(filepath.Join(home, rel)) {
 			t.Fatalf("%s not disabled", rel)
 		}

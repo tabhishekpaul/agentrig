@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/tabhishekpaul/agentrig/library"
 )
 
 // fake is a skills.sh stand-in.
@@ -55,6 +57,7 @@ func newFake(t *testing.T) *fake {
 
 func (f *fake) market(t *testing.T) (*Market, string) {
 	home := t.TempDir()
+	t.Setenv("HOME", home) // the library lives at $HOME/.arig/library
 	return &Market{Dir: filepath.Join(home, "cfg"), Base: f.srv.URL, HTTP: f.srv.Client(), Version: "v1.0.0",
 		SkillDir: func(tool string) string {
 			if tool == "none" {
@@ -170,7 +173,22 @@ func TestInstallUpdateUninstall(t *testing.T) {
 	if _, err := os.Stat(claude); err != nil {
 		t.Fatal(err)
 	}
+	// every tool links (relatively) to one library entry
 	le := m.Lock()["o/r/foo"]
+	for _, tool := range []string{"claude", "codex"} {
+		p := filepath.Join(home, tool, "skills", "foo")
+		l, err := os.Readlink(p)
+		if err != nil || filepath.IsAbs(l) || library.Target(p) == "" {
+			t.Fatalf("%s: want a relative library link, got %q %v", tool, l, err)
+		}
+		if real, _ := filepath.EvalSymlinks(le.Path); library.Target(p) != real {
+			t.Fatalf("%s links to %s, lock says %s", tool, library.Target(p), le.Path)
+		}
+	}
+	if !strings.HasPrefix(le.Path, filepath.Join(home, ".arig", "library", "o", "r", "foo")) {
+		t.Fatalf("lock path %s", le.Path)
+	}
+	v1Entry := le.Path
 	if le.Hash != "aaa1" || le.Source != "o/r" || le.SkillID != "foo" || le.Name != "Foo" || len(le.Tools) != 2 {
 		t.Fatalf("%+v", le)
 	}
@@ -205,6 +223,12 @@ func TestInstallUpdateUninstall(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(home, "claude", "skills", "foo", "scripts")); err == nil {
 		t.Error("removed file survived the update")
 	}
+	if le2 := m.Lock()["o/r/foo"]; le2.Path == v1Entry || len(library.Versions("o/r/foo")) != 2 {
+		t.Error("update should be a new library version, the old one kept")
+	}
+	if !library.IsLibraryLink(filepath.Join(home, "codex", "skills-disabled", "foo")) {
+		t.Error("disabled copy not relinked")
+	}
 	if _, _, err := m.Review("o/r/foo"); err == nil {
 		t.Error("up to date should not review")
 	}
@@ -221,6 +245,9 @@ func TestInstallUpdateUninstall(t *testing.T) {
 	}
 	if _, err := os.Stat(other); err != nil || len(m.Lock()) != 0 {
 		t.Error("uninstall touched another skill or left the lock")
+	}
+	if _, err := os.Stat(v1Entry); err != nil {
+		t.Error("uninstall removed the library entry")
 	}
 
 	// unsafe download: nothing lands

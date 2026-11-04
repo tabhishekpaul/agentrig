@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/tabhishekpaul/agentrig/catalog"
+	"github.com/tabhishekpaul/agentrig/library"
 )
 
 var idRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
@@ -33,14 +34,16 @@ type Skill struct {
 	Tools       []string `json:"tools"`
 }
 
-// Canonical is where new skills live: ~/.agents/skills is the tool-neutral
-// folder (Codex and others read it directly), so a skill survives removing
-// any one tool. Other tools get a relative symlink to it.
+// Canonical is the tool-neutral skill folder (~/.agents/skills, read by
+// Codex and others). A new skill with no tools chosen is linked there.
 func Canonical(home string) string { return filepath.Join(home, ".agents", "skills") }
 
-// Create writes <canonical>/<id>/SKILL.md and links it into each chosen tool's
-// skill folder. dirs is adapters.SkillDirs(). It never overwrites: an id that
-// exists anywhere (enabled or disabled, in any tool) is refused.
+// Create writes the new skill into the central library (~/.arig/library/<id>/<hash>)
+// and links it into each chosen tool's skill folder (relative links, so they
+// survive sync to another machine; copies where links aren't available).
+// dirs is adapters.SkillDirs(). It never overwrites: an id that exists
+// anywhere (enabled or disabled, in any tool) is refused. Returns the
+// library entry.
 func Create(home string, dirs map[string][]string, s Skill) (string, error) {
 	if !ValidID(s.ID) {
 		return "", fmt.Errorf("id %q must be lowercase kebab-case (a-z, 0-9, -)", s.ID)
@@ -68,45 +71,58 @@ func Create(home string, dirs map[string][]string, s Skill) (string, error) {
 			}
 		}
 	}
-	var links []string
+	links := []string{}
 	for _, t := range s.Tools {
 		ds, ok := dirs[t]
 		if !ok {
 			return "", fmt.Errorf("%q doesn't read skills", t)
 		}
-		if slices.Contains(ds, canon) {
-			continue // reads ~/.agents/skills itself
+		if l := filepath.Join(linkDir(ds), s.ID); !slices.Contains(links, l) {
+			links = append(links, l)
 		}
-		links = append(links, filepath.Join(linkDir(ds), s.ID))
+	}
+	if len(links) == 0 {
+		links = append(links, filepath.Join(canon, s.ID))
 	}
 
-	dir := filepath.Join(canon, s.ID)
-	if err := os.MkdirAll(canon, 0o755); err != nil {
+	tmp, err := os.MkdirTemp("", "arig-new-skill-")
+	if err != nil {
 		return "", err
 	}
-	if err := os.Mkdir(dir, 0o755); err != nil {
+	defer os.RemoveAll(tmp)
+	if err := os.WriteFile(filepath.Join(tmp, "SKILL.md"), []byte(skillMD(s)), 0o644); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(skillMD(s)), 0o644); err != nil {
-		os.RemoveAll(dir)
+	entry, _, err := library.Put(tmp, s.ID)
+	if err != nil {
 		return "", err
 	}
 	for i, l := range links {
-		rel, err := filepath.Rel(filepath.Dir(l), dir)
-		if err == nil {
-			if err = os.MkdirAll(filepath.Dir(l), 0o755); err == nil {
-				err = os.Symlink(rel, l) // relative, so it survives sync to another machine
-			}
-		}
-		if err != nil { // undo, so a retry starts clean
+		if err := library.Link(l, entry); err != nil { // undo, so a retry starts clean
 			for _, done := range links[:i] {
-				os.Remove(done)
+				os.RemoveAll(done)
 			}
-			os.RemoveAll(dir)
 			return "", err
 		}
 	}
-	return dir, nil
+	return entry, nil
+}
+
+// Save replaces a skill's SKILL.md. A skill that links into the library
+// gets a new library version instead (entries never change), and every
+// tool link to the old version moves to it; dirs is adapters.SkillDirs().
+func Save(p, content string, dirs map[string][]string) error {
+	if library.Target(p) == "" {
+		return os.WriteFile(filepath.Join(p, "SKILL.md"), []byte(content), 0o644)
+	}
+	var all []string
+	for _, ds := range dirs {
+		all = append(all, ds...)
+	}
+	_, err := library.Revise(p, all, func(dir string) error {
+		return os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(content), 0o644)
+	})
+	return err
 }
 
 // linkDir is the tool's first skill folder that exists, else its first one.

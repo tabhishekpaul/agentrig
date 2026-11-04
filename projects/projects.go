@@ -1,7 +1,11 @@
 // Package projects pins skills to a project. A committed .arig/ folder (like
-// .claude/, but for every tool) holds arig.json, which lists global skills to
-// pin, and skills/, the project's own skills. Apply links each one into every
-// tool's project-level skills folder. Only links arig made are ever removed.
+// .claude/, but for every tool) holds arig.json, which lists skills to pin (a
+// library name like "pdf", or a skills.sh id like "owner/repo/skill"),
+// arig.lock, the exact version (library hash) each one resolved to, and
+// skills/, the project's own skills. Apply resolves every pin from the
+// central library (bun-style: locked hash, else newest version, else
+// download) and links it into every tool's project-level skills folder.
+// Only links arig made are ever removed.
 package projects
 
 import (
@@ -9,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -17,12 +22,15 @@ import (
 
 	"github.com/tabhishekpaul/agentrig/adapters"
 	"github.com/tabhishekpaul/agentrig/catalog"
+	"github.com/tabhishekpaul/agentrig/library"
+	"github.com/tabhishekpaul/agentrig/market"
 )
 
 const (
 	Folder       = ".arig"
 	ManifestFile = ".arig/arig.json"
 	LocalSkills  = ".arig/skills"    // the project's own skills, committed with it
+	LockFile     = ".arig/arig.lock" // committed: pin -> library hash
 	lockFile     = ".arig/lock.json" // machine-local record of what arig created (git-ignored)
 	copyMarker   = ".arig-copy"      // dropped inside copies (no symlinks), so copies are recognisable too
 	oldManifest  = ".arig.json"      // before the .arig/ folder; migrated on write
@@ -58,7 +66,9 @@ type Manifest struct {
 var (
 	detect    = adapters.Detect
 	configDir = func() string { d, _ := os.UserConfigDir(); return filepath.Join(d, "agentrig") }
+	newMarket = func() *market.Market { return market.New("") }
 	mu        sync.Mutex
+	copyLinks = runtime.GOOS == "windows" // tests flip it
 )
 
 // ValidSkill: skill ids are plain folder names.
@@ -66,6 +76,15 @@ func ValidSkill(id string) bool {
 	return id != "" && id != "." && id != ".." && !strings.HasPrefix(id, ".") &&
 		!strings.ContainsAny(id, `/\:`) && filepath.Base(id) == id
 }
+
+// Remote reports whether a pin is a skills.sh id (owner/repo/skill).
+func Remote(pin string) bool { _, _, _, err := market.SplitID(pin); return err == nil }
+
+// ValidPin: a plain skill name or a skills.sh id.
+func ValidPin(pin string) bool { return ValidSkill(pin) || Remote(pin) }
+
+// linkName is the folder a pin gets in each tool: its last segment.
+func linkName(pin string) string { return path.Base(pin) }
 
 func ReadManifest(dir string) (Manifest, error) {
 	var m Manifest
@@ -89,10 +108,15 @@ func ReadManifest(dir string) (Manifest, error) {
 }
 
 func (m Manifest) validate() error {
+	seen := map[string]string{}
 	for _, s := range m.Skills {
-		if !ValidSkill(s) {
+		if !ValidPin(s) {
 			return fmt.Errorf("bad skill id %q", s)
 		}
+		if o, ok := seen[linkName(s)]; ok {
+			return fmt.Errorf("%s and %s would share the folder %q", o, s, linkName(s))
+		}
+		seen[linkName(s)] = s
 	}
 	for _, t := range m.Tools {
 		if toolDir(t) == "" {
@@ -133,34 +157,38 @@ func localSkills(dir string) map[string]string {
 	return out
 }
 
-// effective is what a project uses: the pinned global skills plus every
-// skill in .arig/skills (a project skill wins over a global one of the same
-// name), with where each comes from.
-func effective(dir string, m Manifest) (Manifest, map[string]string) {
-	src := global()
+// effective is what a project uses: the pins plus every skill in
+// .arig/skills. A project skill wins over a pin that would take its folder.
+func effective(dir string, m Manifest) Manifest {
 	local := localSkills(dir)
-	m.Skills = slices.Clone(m.Skills)
-	for id, p := range local {
-		src[id] = p
+	m.Skills = slices.DeleteFunc(slices.Clone(m.Skills), func(p string) bool {
+		_, own := local[linkName(p)]
+		return own && p != linkName(p)
+	})
+	for id := range local {
 		if !slices.Contains(m.Skills, id) {
 			m.Skills = append(m.Skills, id)
 		}
 	}
 	slices.Sort(m.Skills)
-	return m, src
+	return m
 }
 
 // Link is one skill in one tool's folder.
 type Link struct {
-	Skill string `json:"skill"`
-	Tool  string `json:"tool"`
-	Path  string `json:"path"`            // relative to the project
-	State string `json:"state"`           // linked | missing | not-installed | conflict (a file arig didn't make)
-	Local bool   `json:"local,omitempty"` // from the project's own .arig/skills
+	Skill   string   `json:"skill"` // the pin: a name or owner/repo/skill
+	Tool    string   `json:"tool"`
+	Path    string   `json:"path"`              // relative to the project
+	State   string   `json:"state"`             // linked | missing | not-installed | needs-confirm | conflict (a file arig didn't make)
+	Local   bool     `json:"local,omitempty"`   // from the project's own .arig/skills
+	Version string   `json:"version,omitempty"` // short library hash
+	Source  string   `json:"source,omitempty"`  // project | library | skills.sh
+	Flags   []string `json:"flags,omitempty"`   // safety flags waiting for confirmation
 }
 
 type lockEntry struct {
 	Path string `json:"path"`
+	Src  string `json:"src,omitempty"` // the folder it links to
 	Copy bool   `json:"copy,omitempty"`
 }
 
@@ -172,6 +200,39 @@ func readLock(dir string) []lockEntry {
 	}
 	_ = json.Unmarshal(b, &l)
 	return l
+}
+
+// readPins reads arig.lock: pin -> library hash. Hashes that aren't one are
+// dropped (the file is committed, so it's input like any other).
+func readPins(dir string) map[string]string {
+	l := map[string]string{}
+	b, _ := os.ReadFile(filepath.Join(dir, LockFile))
+	_ = json.Unmarshal(b, &l)
+	for k, v := range l {
+		if !ValidPin(k) || !library.ValidHash(v) {
+			delete(l, k)
+		}
+	}
+	return l
+}
+
+func writePins(dir string, l map[string]string) error {
+	p := filepath.Join(dir, LockFile)
+	if len(l) == 0 {
+		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	b, _ := json.MarshalIndent(l, "", "  ") // sorted keys: clean diffs
+	b = append(b, '\n')
+	if old, err := os.ReadFile(p); err == nil && string(old) == string(b) {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(p, b, 0o644)
 }
 
 // global maps skill id -> global folder.
@@ -197,33 +258,131 @@ func tools(m Manifest) []string {
 	return out
 }
 
+// resolved is where one pin comes from.
+type resolved struct {
+	Path   string // what the links point to; "" = not available here
+	Hash   string // library hash ("" for project skills and not-yet-stored globals)
+	Source string // project | library | skills.sh
+	Flags  []string
+	global bool // Path is an installed global skill not in the library yet
+}
+
+func isDir(p string) bool { fi, err := os.Stat(p); return err == nil && fi.IsDir() }
+
+// resolve finds every pin without writing or downloading anything: the
+// project's own skill; else the locked library version; else the newest
+// library version; else (plain names) the installed global skill.
+func resolve(dir string, m Manifest, pins map[string]string) map[string]resolved {
+	local := localSkills(dir)
+	var glob map[string]string
+	out := map[string]resolved{}
+	for _, pin := range m.Skills {
+		src := "library"
+		if Remote(pin) {
+			src = "skills.sh"
+		}
+		if p, ok := local[pin]; ok {
+			out[pin] = resolved{Path: p, Source: "project"}
+			continue
+		}
+		if h := pins[pin]; h != "" && isDir(library.Path(pin, h)) {
+			out[pin] = resolved{Path: library.Path(pin, h), Hash: h, Source: src}
+			continue
+		}
+		if vs := library.Versions(pin); len(vs) > 0 {
+			out[pin] = resolved{Path: vs[0].Path, Hash: vs[0].Hash, Source: src}
+			continue
+		}
+		if !Remote(pin) {
+			if glob == nil {
+				glob = global()
+			}
+			if p := glob[pin]; p != "" {
+				out[pin] = resolved{Path: p, Source: src, global: true}
+				continue
+			}
+		}
+		out[pin] = resolved{Source: src}
+	}
+	return out
+}
+
+// fetch fills in what resolve couldn't: a global skill is put into the
+// library; a skills.sh id is downloaded into it, unless it carries safety
+// flags that nobody accepted (not locked before, not in accept), in which
+// case it waits as needs-confirm.
+func fetch(r map[string]resolved, pins map[string]string, accept []string) error {
+	var mk *market.Market
+	var errs []error
+	for pin, x := range r {
+		switch {
+		case x.global:
+			p, h, err := library.Put(x.Path, pin)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", pin, err))
+				continue
+			}
+			r[pin] = resolved{Path: p, Hash: h, Source: x.Source}
+		case x.Path == "" && Remote(pin):
+			if mk == nil {
+				mk = newMarket()
+			}
+			dl, err := mk.Get(pin)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			if f := market.Flags(dl.Files); len(f) > 0 && pins[pin] == "" && !slices.Contains(accept, pin) {
+				x.Flags = f
+				r[pin] = x
+				continue
+			}
+			p, err := mk.ToLibrary(pin, dl)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", pin, err))
+				continue
+			}
+			r[pin] = resolved{Path: p, Hash: filepath.Base(p), Source: x.Source}
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // Status reports every skill × tool in the manifest without changing anything.
 func Status(dir string) ([]Link, error) {
 	m, err := ReadManifest(dir)
 	if err != nil {
 		return nil, err
 	}
-	m, src := effective(dir, m)
-	return status(dir, m, src, readLock(dir)), nil
+	m = effective(dir, m)
+	return status(dir, m, resolve(dir, m, readPins(dir)), readLock(dir)), nil
 }
 
-func status(dir string, m Manifest, glob map[string]string, lock []lockEntry) []Link {
-	ours := map[string]bool{}
+func short(h string) string { return h[:min(len(h), 8)] }
+
+func status(dir string, m Manifest, r map[string]resolved, lock []lockEntry) []Link {
+	ours := map[string]string{} // path -> what it links to
 	for _, e := range lock {
-		ours[e.Path] = owned(dir, e)
+		if owned(dir, e) {
+			ours[e.Path] = e.Src
+		}
 	}
 	links := []Link{}
 	for _, t := range tools(m) {
 		for _, s := range m.Skills {
-			rel := filepath.ToSlash(filepath.Join(toolDir(t), s))
-			l := Link{Skill: s, Tool: t, Path: rel, State: "missing",
-				Local: strings.HasPrefix(filepath.ToSlash(glob[s]), filepath.ToSlash(filepath.Join(dir, LocalSkills))+"/")}
+			x := r[s]
+			rel := filepath.ToSlash(filepath.Join(toolDir(t), linkName(s)))
+			l := Link{Skill: s, Tool: t, Path: rel, State: "missing", Local: x.Source == "project",
+				Version: short(x.Hash), Source: x.Source, Flags: x.Flags}
+			src, mine := ours[rel]
 			switch {
-			case ours[rel]:
+			case len(x.Flags) > 0:
+				l.State = "needs-confirm"
+			case mine && x.Path != "" && src == x.Path:
 				l.State = "linked"
-			case exists(filepath.Join(dir, rel)):
+			case !mine && exists(filepath.Join(dir, rel)):
 				l.State = "conflict"
-			case glob[s] == "":
+			case x.Path == "":
 				l.State = "not-installed"
 			}
 			links = append(links, l)
@@ -252,10 +411,12 @@ func owned(dir string, e lockEntry) bool {
 	return err == nil && fi.Mode()&os.ModeSymlink != 0
 }
 
-// Apply makes the project match its manifest: links what's listed, removes
-// links arig made earlier that are no longer listed, never touches anything
-// else. Returns the resulting status.
-func Apply(dir string) ([]Link, error) {
+// Apply makes the project match its manifest: resolves every pin (see
+// resolve and fetch), records the versions in arig.lock, links them, removes
+// links arig made earlier that are no longer wanted, and never touches
+// anything else. Pins in accept may be installed despite safety flags.
+// Returns the resulting status.
+func Apply(dir string, accept ...string) ([]Link, error) {
 	mu.Lock()
 	defer mu.Unlock()
 	m, err := ReadManifest(dir)
@@ -266,32 +427,51 @@ func Apply(dir string) ([]Link, error) {
 	if err != nil {
 		return nil, err
 	}
-	m, glob := effective(dir, m)
-	want := map[string]bool{}
-	for _, l := range status(dir, m, glob, nil) {
-		want[l.Path] = true
+	m = effective(dir, m)
+	pins := readPins(dir)
+	r := resolve(dir, m, pins)
+	var errs []error
+	if err := fetch(r, pins, accept); err != nil {
+		errs = append(errs, err)
+	}
+	next := map[string]string{}
+	for _, s := range m.Skills {
+		switch x := r[s]; {
+		case x.Hash != "":
+			next[s] = x.Hash
+		case x.Source != "project" && pins[s] != "":
+			next[s] = pins[s] // not available here: keep the team's pin
+		}
+	}
+	if err := writePins(dir, next); err != nil {
+		return nil, err
 	}
 
+	want := map[string]string{}
+	for _, l := range status(dir, m, r, nil) {
+		if x := r[l.Skill]; x.Path != "" && len(x.Flags) == 0 {
+			want[l.Path] = x.Path
+		}
+	}
 	var lock []lockEntry
 	for _, e := range readLock(dir) {
 		switch {
 		case !owned(dir, e):
 			// gone, or replaced by the user: forget it, leave the file alone
-		case want[e.Path] && (e.Copy || target(e.Path, root, glob) == readlink(filepath.Join(dir, e.Path))):
+		case e.Src != "" && want[e.Path] == e.Src && (e.Copy || target(e.Path, root, e.Src) == readlink(filepath.Join(dir, e.Path))):
 			lock = append(lock, e)
-		default: // no longer listed, or the global skill moved
+		default: // no longer listed, or now resolves to another version
 			if err := os.RemoveAll(filepath.Join(dir, e.Path)); err != nil {
 				return nil, err
 			}
 		}
 	}
 
-	var errs []error
-	for _, l := range status(dir, m, glob, lock) {
+	for _, l := range status(dir, m, r, lock) {
 		if l.State != "missing" {
 			continue
 		}
-		e, err := link(dir, root, l.Path, glob[l.Skill])
+		e, err := link(dir, root, l.Path, r[l.Skill].Path)
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -304,18 +484,18 @@ func Apply(dir string) ([]Link, error) {
 	if err := ignore(dir, m); err != nil {
 		errs = append(errs, err)
 	}
-	return status(dir, m, glob, lock), errors.Join(errs...)
+	return status(dir, m, r, lock), errors.Join(errs...)
 }
 
 func readlink(p string) string { s, _ := os.Readlink(p); return s }
 
-// target is the relative symlink from the project path to the global skill.
-func target(rel, root string, glob map[string]string) string {
-	src, err := filepath.EvalSymlinks(glob[filepath.Base(rel)])
+// target is the relative symlink from the project path rel to src.
+func target(rel, root, src string) string {
+	real, err := filepath.EvalSymlinks(src)
 	if err != nil {
 		return ""
 	}
-	t, _ := filepath.Rel(filepath.Join(root, filepath.Dir(filepath.FromSlash(rel))), src)
+	t, _ := filepath.Rel(filepath.Join(root, filepath.Dir(filepath.FromSlash(rel))), real)
 	return t
 }
 
@@ -333,9 +513,9 @@ func link(dir, root, rel, src string) (lockEntry, error) {
 	if r, err := filepath.Rel(root, parent); err != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) {
 		return lockEntry{}, fmt.Errorf("%s leaves the project; not linking", filepath.Dir(rel))
 	}
-	if t := target(rel, root, map[string]string{filepath.Base(rel): src}); t != "" && runtime.GOOS != "windows" {
+	if t := target(rel, root, src); t != "" && !copyLinks {
 		if os.Symlink(t, p) == nil {
-			return lockEntry{Path: rel}, nil
+			return lockEntry{Path: rel, Src: src}, nil
 		}
 	}
 	// Windows, or symlinks not allowed: copy.
@@ -350,7 +530,7 @@ func link(dir, root, rel, src string) (lockEntry, error) {
 	if err := os.WriteFile(filepath.Join(p, copyMarker), []byte("copied by arig; `arig apply` replaces or removes this folder\n"), 0o644); err != nil {
 		return lockEntry{}, err
 	}
-	return lockEntry{Path: rel, Copy: true}, nil
+	return lockEntry{Path: rel, Src: src, Copy: true}, nil
 }
 
 func writeLock(dir string, l []lockEntry) error {
@@ -390,7 +570,7 @@ func ignore(dir string, m Manifest) error {
 	block := []string{ignoreStart, "/" + lockFile}
 	for _, t := range ts {
 		for _, s := range m.Skills {
-			block = append(block, "/"+toolDir(t)+"/"+s)
+			block = append(block, "/"+toolDir(t)+"/"+linkName(s))
 		}
 	}
 	block = append(block, ignoreEnd)
@@ -436,7 +616,7 @@ func Skills(dir string) ([]catalog.Entry, error) {
 		out = append(out, catalog.Entry{ID: id, Name: name, Description: fm["description"], Category: cat, Path: p})
 	}
 	for _, e := range catalog.Local(detect()) {
-		if _, own := local[e.ID]; !own && slices.Contains(m.Skills, e.ID) {
+		if _, own := local[e.ID]; !own && slices.ContainsFunc(m.Skills, func(p string) bool { return linkName(p) == e.ID }) {
 			out = append(out, e)
 		}
 	}
@@ -451,7 +631,7 @@ func Edit(dir string, add bool, ids ...string) (Manifest, error) {
 		return m, err
 	}
 	for _, id := range ids {
-		if !ValidSkill(id) {
+		if !ValidPin(id) {
 			return m, fmt.Errorf("bad skill id %q", id)
 		}
 		i := slices.Index(m.Skills, id)

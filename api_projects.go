@@ -143,6 +143,22 @@ func registerProjects(mux *http.ServeMux) {
 			linksReply(w, ls, err)
 		}
 	})
+	// Install a pinned skills.sh skill whose safety flags the user accepted.
+	mux.HandleFunc("POST /api/projects/accept", func(w http.ResponseWriter, r *http.Request) {
+		p, ok := project(w, r)
+		if !ok {
+			return
+		}
+		var req struct {
+			Skill string `json:"skill"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil || !projects.Remote(req.Skill) {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		ls, err := projects.Apply(p, req.Skill)
+		linksReply(w, ls, err)
+	})
 	// What the picker offers: every installed skill, and the tools that have
 	// a project skills folder.
 	mux.HandleFunc("GET /api/projects/skills-available", func(w http.ResponseWriter, r *http.Request) {

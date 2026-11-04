@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/tabhishekpaul/agentrig/adapters"
 	"github.com/tabhishekpaul/agentrig/gitsync"
+	"github.com/tabhishekpaul/agentrig/library"
 )
 
 //go:embed all:web/build
@@ -75,6 +77,17 @@ func Launch(port int, open bool) error {
 	}
 
 	syncer := newSyncer()
+	// Once per machine, before anything else reads the skill folders: move
+	// real skill folders into the central library (backed up first).
+	if rep, err := library.Migrate(syncer.Home, filepath.Join(syncer.Dir, "backup")); err != nil {
+		log.Printf("library: migration stopped: %v", err)
+	} else if rep.Migrated+len(rep.Skipped)+len(rep.Failed) > 0 {
+		log.Printf("library: %d skill folders moved into the library (%d new entries), %d left in place, %d failed; log %s",
+			rep.Migrated, rep.Created, len(rep.Skipped), len(rep.Failed), rep.Log)
+		for _, f := range rep.Failed {
+			log.Printf("library: %s", f)
+		}
+	}
 	go syncer.Loop(context.Background(), SyncEvery)
 	go gitsync.Providers(false) // warm: the Sync page opens without waiting on GitHub
 

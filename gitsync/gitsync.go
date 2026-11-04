@@ -1,6 +1,7 @@
 // Package gitsync keeps AI tool setups in step across machines through a
 // git repo the user owns. The repo mirrors the home layout:
 //
+//	home/.arig/library/<name>/<hash>/…     the central skill library (entries never change)
 //	home/.claude/skills/<name>/…           skills (links stay links)
 //	home/.claude/skills-disabled/<name>/…  switched-off skills
 //	state.json                             plugin on/off per tool
@@ -24,11 +25,17 @@ import (
 	"time"
 )
 
+// LibraryDir is the central skill library (package library), relative to
+// home. It's synced first so the relative links into it never dangle, and
+// only its entry folders travel: its top-level files (migration logs and
+// marker) stay on each machine.
+const LibraryDir = ".arig/library"
+
 // Dirs are the skill folders kept in sync, relative to home.
 var Dirs = func() []string {
 	base := []string{".claude/skills", ".agents/skills", ".codex/skills", ".cursor/skills", ".gemini/skills",
 		".gemini/antigravity/skills", ".copilot/skills", ".factory/skills", ".config/opencode/skill", ".config/opencode/skills"}
-	var all []string
+	all := []string{LibraryDir}
 	for _, d := range base {
 		all = append(all, d, d+"-disabled")
 	}
@@ -190,7 +197,7 @@ func (s *Syncer) run(c Config) (string, error) {
 		if _, err := os.Stat(src); err != nil {
 			continue // tool not on this machine: not a deletion
 		}
-		n, err := mirror(src, filepath.Join(r, "home", d), "", first)
+		n, err := mirror(src, filepath.Join(r, "home", d), "", first, d == LibraryDir)
 		if err != nil {
 			return "", err
 		}
@@ -231,16 +238,16 @@ func (s *Syncer) run(c Config) (string, error) {
 	for _, d := range Dirs {
 		src := filepath.Join(r, "home", d)
 		dst := filepath.Join(s.Home, d)
-		if _, err := os.Stat(filepath.Dir(dst)); err != nil && !strings.HasPrefix(d, ".agents/") {
+		if _, err := os.Stat(filepath.Dir(dst)); err != nil && !strings.HasPrefix(d, ".agents/") && d != LibraryDir {
 			continue // tool not on this machine (e.g. no ~/.cursor): don't create it.
-			// ~/.agents is shared by all tools (others link into it), so it's always created.
+			// ~/.agents and the library are shared by all tools (others link into them), so they're always created.
 		}
 		if _, err := os.Stat(src); err != nil {
 			if _, err := os.Stat(dst); err != nil {
 				continue // neither side has this folder
 			}
 		}
-		n, err := mirror(src, dst, filepath.Join(backup, d), false)
+		n, err := mirror(src, dst, filepath.Join(backup, d), false, d == LibraryDir)
 		if err != nil {
 			return "", err
 		}

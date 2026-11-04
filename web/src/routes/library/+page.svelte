@@ -135,6 +135,29 @@
 		}
 	}
 
+	// The central library (~/.arig/library) every tool folder links into.
+	let lib = $state(null);
+	let undoArmed = $state(false);
+	const loadLib = () => api('library').then((l) => (lib = l)).catch(() => {});
+	loadLib();
+	const size = (b) => (b < 1e6 ? `${Math.max(1, Math.round(b / 1e3))} KB` : `${(b / 1e6).toFixed(1)} MB`);
+	async function undoMigration() {
+		if (!undoArmed) {
+			undoArmed = true; // first click arms, second click undoes
+			return;
+		}
+		undoArmed = false;
+		error = notice = '';
+		try {
+			const r = await api('library/undo', { method: 'POST' });
+			notice = `Turned ${r.restored} library link${r.restored === 1 ? '' : 's'} back into real folders.`;
+			if (r.error) error = r.error;
+		} catch (e) {
+			error = e.message;
+		}
+		await Promise.all([loadLib(), load()]);
+	}
+
 	async function toggle(i, t) {
 		const want = !i.enabled;
 		i.enabled = want; // optimistic; reverted below if the write fails
@@ -173,6 +196,27 @@
 	</div>
 	<span class="hint">Changes apply to new sessions.</span>
 </div>
+{#if lib && (lib.versions || lib.lastMigration)}
+	<div class="central">
+		<span class="label-mono">central library</span>
+		<span class="tabular">{lib.entries} skills</span>
+		<span class="tabular">{lib.versions} versions</span>
+		<span class="tabular">{size(lib.bytes)}</span>
+		<span class="tabular">{lib.links} tool folders link here</span>
+		<code title={lib.root}>~/.arig/library</code>
+		{#if lib.lastMigration}
+			{@const m = lib.lastMigration}
+			<span class="mig">
+				{m.undone ? 'Migration undone' : `Moved ${m.links} skill folder${m.links === 1 ? '' : 's'} in`}
+				{new Date(m.undone ?? m.time).toLocaleDateString()}
+				{#if !m.undone && m.links}
+					<button class="undo" class:armed={undoArmed} onclick={undoMigration} onblur={() => (undoArmed = false)}
+						title="Turn those links back into real folders (the library keeps its copies)">{undoArmed ? 'Confirm undo' : 'Undo'}</button>
+				{/if}
+			</span>
+		{/if}
+	</div>
+{/if}
 {#if error}<p class="err">{error}</p>{/if}
 {#if notice}<p class="note">{notice}</p>{/if}
 
@@ -280,6 +324,13 @@
 	.tabs button.active span { color: var(--brand-text); }
 	.hint { font-family: var(--mono); font-size: 11px; color: var(--faint); }
 	.err { margin: 12px 24px 0; padding: 10px 12px; font-size: 13px; color: var(--brand-text); background: var(--brand-tint); border-left: 2px solid var(--brand); }
+	.central { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 8px 24px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+	.central .tabular { font-family: var(--mono); font-size: 11px; }
+	.central code { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+	.central .mig { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+	.undo { height: 24px; padding: 0 10px; border: 1px solid var(--input); border-radius: var(--radius); background: none; color: var(--foreground); font: 500 12px Poppins, sans-serif; cursor: pointer; }
+	.undo:hover { border-color: var(--brand); color: var(--brand-text); }
+	.undo.armed { background: var(--brand); border-color: var(--brand); color: #fff; }
 	.split { flex: 1; min-height: 0; display: flex; }
 	.cats { flex: none; width: 200px; display: flex; flex-direction: column; gap: 1px; padding: 12px 8px; overflow-y: auto; border-right: 1px solid var(--border); }
 	.cats button { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 30px; padding: 0 10px; border: 0; border-radius: var(--radius); background: none; font-size: 13px; color: var(--foreground); text-align: left; cursor: pointer; }

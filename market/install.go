@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/tabhishekpaul/agentrig/adapters"
+	"github.com/tabhishekpaul/agentrig/library"
 )
 
 // Caps for one downloaded skill.
@@ -34,7 +35,7 @@ type LockEntry struct {
 	Name        string    `json:"name"`
 	InstalledAt time.Time `json:"installedAt"`
 	Tools       []string  `json:"tools"`
-	Path        string    `json:"path"` // canonical copy under the config dir
+	Path        string    `json:"path"` // library entry every tool links to (older installs: a copy under the config dir)
 }
 
 // ErrConfirm means the skill carries safety flags the user hasn't accepted.
@@ -186,8 +187,20 @@ func writeFiles(files []File, dst string) error {
 	return nil
 }
 
-// Install downloads one skill and copies it into each tool's global skills
-// folder. Flagged skills need accept.
+// ToLibrary puts a downloaded skill into the central library as id
+// (owner/repo/skill) and returns the entry path.
+func (m *Market) ToLibrary(id string, d Download) (string, error) {
+	staged, err := m.stage(d)
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(staged) // gone already if it was moved in
+	return library.Adopt(staged, id)
+}
+
+// Install downloads one skill into the central library and links it into
+// each tool's global skills folder (copies where links aren't available).
+// Flagged skills need accept.
 func (m *Market) Install(id string, tools []string, accept bool) error {
 	m.opMu.Lock()
 	defer m.opMu.Unlock()
@@ -227,23 +240,18 @@ func (m *Market) Install(id string, tools []string, accept bool) error {
 	if len(Flags(dl.Files)) > 0 && !accept {
 		return ErrConfirm
 	}
-	staged, err := m.stage(dl)
+	entry, err := m.ToLibrary(id, dl)
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(staged)
-	canon := m.canon(name)
-	os.RemoveAll(canon) // not in the lock, so a leftover from an interrupted install
-	if err := os.Rename(staged, canon); err != nil {
-		return err
-	}
 	for i, d := range dirs {
-		if err := copyTree(canon, filepath.Join(d, name)); err != nil {
+		if err := library.Link(filepath.Join(d, name), entry); err != nil {
 			for _, done := range dirs[:i+1] {
-				os.RemoveAll(filepath.Join(done, name))
+				if library.IsLibraryLink(filepath.Join(done, name)) {
+					os.RemoveAll(filepath.Join(done, name))
+				}
 			}
-			os.RemoveAll(canon)
-			return err
+			return err // the library entry stays: entries are shared and immutable
 		}
 	}
 	src, _ := strings.CutSuffix(id, "/"+name)
@@ -252,13 +260,14 @@ func (m *Market) Install(id string, tools []string, accept bool) error {
 		n = name
 	}
 	lock[id] = LockEntry{ID: id, Source: src, SkillID: name, Hash: dl.Hash, Name: n,
-		InstalledAt: time.Now().UTC(), Tools: tools, Path: canon}
+		InstalledAt: time.Now().UTC(), Tools: tools, Path: entry}
 	return m.saveLock(lock)
 }
 
-// Uninstall removes exactly what Install put down: the copy in each recorded
-// tool (enabled or disabled) and the canonical copy. Paths are rebuilt from
-// the validated id, never taken from lock.json as-is.
+// Uninstall removes exactly what Install put down: the link (or copy) in
+// each recorded tool, enabled or disabled, plus an older install's private
+// copy. The library entry stays. Paths are rebuilt from the validated id,
+// never taken from lock.json as-is.
 func (m *Market) Uninstall(id string) error {
 	m.opMu.Lock()
 	defer m.opMu.Unlock()
@@ -379,7 +388,11 @@ func (m *Market) Review(id string) (diff string, flags []string, err error) {
 		return "", nil, err
 	}
 	defer os.RemoveAll(staged)
-	diff, err = DiffTrees(m.canon(le.SkillID), staged, 512<<10)
+	base := m.canon(le.SkillID) // installs from before the library
+	if p := library.Path(le.ID, filepath.Base(le.Path)); le.Path == p {
+		base = p
+	}
+	diff, err = DiffTrees(base, staged, 512<<10)
 	return diff, Flags(d.Files), err
 }
 
@@ -398,32 +411,21 @@ func (m *Market) Apply(id string, accept bool) error {
 	if len(Flags(d.Files)) > 0 && !accept {
 		return ErrConfirm
 	}
-	staged, err := m.stage(d)
+	entry, err := m.ToLibrary(id, d)
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(staged)
-	canon := m.canon(name)
-	old := canon + ".old"
-	os.RemoveAll(old)
-	if err := os.Rename(canon, old); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	if err := os.Rename(staged, canon); err != nil {
-		os.Rename(old, canon)
-		return err
-	}
-	os.RemoveAll(old)
 	for _, p := range m.placed(name, le.Tools) {
 		if err := os.RemoveAll(p); err != nil {
 			return err
 		}
-		if err := copyTree(canon, p); err != nil {
+		if err := library.Link(p, entry); err != nil {
 			return err
 		}
 	}
+	os.RemoveAll(m.canon(name)) // an older install's private copy
 	lock := m.Lock()
-	le.Hash = d.Hash
+	le.Hash, le.Path = d.Hash, entry
 	lock[id] = le
 	m.mu.Lock()
 	delete(m.updates, id)

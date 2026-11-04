@@ -61,19 +61,43 @@ Open **AI access** in the dashboard to add or remove it in each tool with one cl
 
 On **AI access**, **arig agent** adds a ready-made `arig` agent that uses those tools to tools with custom agents: Claude Code (`~/.claude/agents/arig.md`), opencode (`~/.config/opencode/agents/arig.md`), Factory Droid (`~/.factory/droids/arig.md`), GitHub Copilot CLI (`~/.copilot/agents/arig.agent.md`), Gemini CLI (`~/.gemini/agents/arig.md`) and Kiro (`~/.kiro/agents/arig.json`). arig never overwrites an agent file it didn't write. Then ask, e.g. in Claude Code: *use the arig agent to switch off skills I don't use*.
 
+## One central library
+
+Like bun or pnpm, arig keeps one store and links everything else into it. Every skill version lives once, content-addressed:
+
+```
+~/.arig/library/
+  pdf/3f9a1c2b7e01/                     a skill of your own (folder name)
+  anthropics/skills/pdf/77c1e0aa5b2d/   a skills.sh skill (owner/repo/skill)
+```
+
+The folder name is the first 12 hex digits of a sha256 over the skill's files, so an entry never changes: an update or an edit in Studio is a new entry, and the tool links move to it. Each tool's skills folder holds relative links (`~/.claude/skills/pdf -> ../../.arig/library/pdf/3f9a…`; copies on Windows), the marketplace and Studio install through the library, and sync carries the library along with the links, so they work on every machine whatever its home path.
+
+The first time the new arig starts, it moves your existing skill folders into the library: each one is first copied to **Insights › Backups**, identical skills in several tools become one entry, and existing links (like `~/.claude/skills/x -> ../../.agents/skills/x`) are left as they are. Git checkouts, folders with `node_modules`, `.env` files, files over 10 MB, or links pointing outside the skill stay where they are. The **Library** page shows the store's size and has **Undo** for that move.
+
+**Projects** resolve from the library. `.arig/arig.json` lists skills by library name (`pdf`) or skills.sh id (`anthropics/skills/pdf`), and the committed `.arig/arig.lock` pins each one to a version hash. Run `arig install` in a project (or press **Apply**): a locked version in the library is used as is; otherwise the newest library version is used and locked, and a skills.sh skill is downloaded into the library first. A skill with safety flags that nobody locked before waits for `arig install --accept owner/repo/skill` (or **Accept** on the Projects page). Each tool's project folder gets links straight to the library entries.
+
+```
+$ arig install
++ pdf@3f9a1c2b (library)
++ anthropics/skills/pdf@77c1e0aa (skills.sh)
+
+2 skills linked into 2 tools [38ms]
+```
+
 ## Marketplace: search and install from skills.sh
 
 The **Marketplace** page searches the [skills.sh](https://skills.sh) registry directly (most installed first), with category shortcuts and suggestions for a project folder: arig reads file names and `package.json` locally and only sends the search words. It is the one page that needs the internet.
 
 - **Before you install**, arig downloads the skill and shows its description, every file with its size, and safety flags it works out from the files themselves: `scripts`, `network` (scripts that reach the internet), `shell-pipe` (`curl … | sh`, `iex`), `binary` and `large`. A flagged skill only installs after you confirm.
-- **Installing** writes the files into the skills folder of each tool you pick. Every path is checked to stay inside that folder, `.env` and `.git` files are skipped, size is capped, and nothing downloaded is ever run by arig. Installs are recorded in `lock.json` with the skills.sh version hash, and uninstall removes exactly what was put down.
+- **Installing** writes the files into the central library and links them into the skills folder of each tool you pick. Every path is checked to stay inside the skill, `.env` and `.git` files are skipped, size is capped, and nothing downloaded is ever run by arig. Installs are recorded in `lock.json` with the skills.sh version hash, and uninstall removes exactly the links it put down (the library entry stays).
 - **Updates** are found by comparing that hash with the current one (when you open the page, and once a day). arig never updates on its own: **Review update** shows a diff of every changed file, then you choose.
 
 ## Sync between machines
 
 Open **Sync** in the dashboard. arig checks which git accounts this computer is signed in to through the GitHub CLI (`gh`) or GitLab CLI (`glab`) and looks for a repo called `arig-sync`. If it exists, pick **Use this repo**; if not, arig offers to create it as a private repo, and only does so after you confirm. Any other git host works too: create an empty private repo and paste its URL. Do the same on your other machines. arig then syncs every 15 minutes while it runs, or whenever you press **Sync now**.
 
-- **Syncs:** skills in every supported tool's skills folder (including switched-off ones), and plugins switched on or off for Claude Code and Codex.
+- **Syncs:** the central library (`~/.arig/library`), skills in every supported tool's skills folder (including switched-off ones), and plugins switched on or off for Claude Code and Codex.
 - **Never syncs:** MCP server configs (they hold API keys), `.env` files, `node_modules`, and files over 10 MB.
 - The repo mirrors your home folders (`home/.claude/skills/…`). Links stay links, so skills linked into `~/.agents/skills` keep working on every machine.
 - Joining never deletes anything: a machine's first sync only adds. After that, deleting or switching off a skill on one machine does the same on the others.
@@ -150,6 +174,8 @@ server.go    server, token + host guard, embedded UI
 api.go       /api routes
 adapters/    one file per AI tool
 gitsync/     sync between machines through git
+library/     the central content-addressed skill store and its one-time migration
+projects/    per-project skills (.arig/), resolved from the library
 web/         SvelteKit UI (built into the binary)
 site/        website and install scripts (GitHub Pages)
 .github/     CI, release and Pages workflows

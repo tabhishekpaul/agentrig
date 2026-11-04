@@ -108,6 +108,20 @@
 	const toggleTool = (id) =>
 		save({ ...manifest, tools: active.includes(id) ? active.filter((t) => t !== id) : [...active, id] });
 
+	// A pinned skills.sh skill with safety flags waits until the user accepts them.
+	async function accept(skill) {
+		busy = 'apply';
+		error = '';
+		try {
+			const r = await api('projects/accept' + q(path), json('POST', { skill }));
+			links = r.links;
+			if (r.error) error = r.error;
+		} catch (e) {
+			error = msg(e);
+		}
+		busy = '';
+	}
+
 	async function apply() {
 		busy = 'apply';
 		error = '';
@@ -128,6 +142,8 @@
 					.slice(0, 8)
 			: []
 	);
+	// owner/repo/skill typed in the search pins a skills.sh skill
+	const remoteId = $derived(/^[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*$/.test(find.trim()) && !manifest?.skills.includes(find.trim()) ? find.trim() : '');
 	const desc = (id) => avail.skills.find((s) => s.id === id)?.description;
 	const stateOf = (skill, tool) => links.find((l) => l.skill === skill && l.tool === tool);
 	const toolName = (id) => avail.tools.find((t) => t.id === id)?.name ?? id;
@@ -135,7 +151,9 @@
 	// The project's own skills (.arig/skills) come from the folder, not the pin list.
 	const localIds = $derived([...new Set(links.filter((l) => l.local).map((l) => l.skill))]);
 	const rows = $derived([...localIds, ...(manifest?.skills ?? []).filter((s) => !localIds.includes(s))]);
-	const label = { linked: 'linked', missing: 'not linked yet', 'not-installed': 'skill not installed', conflict: 'your own file is here' };
+	const label = { linked: 'linked', missing: 'not linked yet', 'not-installed': 'not in the library', conflict: 'your own file is here', 'needs-confirm': 'needs confirm' };
+	// Version and source are the same in every tool: take the first link's.
+	const infoOf = (skill) => links.find((l) => l.skill === skill);
 </script>
 
 {#if !path}
@@ -231,10 +249,13 @@
 			<div class="picker">
 				<label class="search">
 					<Search size={15} />
-					<input placeholder="Search {avail.skills.length} installed skills to pin" bind:value={find} />
+					<input placeholder="Search {avail.skills.length} installed skills to pin, or type owner/repo/skill" bind:value={find} />
 				</label>
-				{#if matches.length}
+				{#if matches.length || remoteId}
 					<ul class="drop">
+						{#if remoteId}
+							<li><button onclick={() => pin(remoteId)}><strong>{remoteId}</strong><span>Pin this skills.sh skill: Apply downloads it into the library</span></button></li>
+						{/if}
 						{#each matches as s (s.id)}
 							<li><button onclick={() => pin(s.id)}><strong>{s.name}</strong><span>{s.description ?? ''}</span></button></li>
 						{/each}
@@ -244,9 +265,10 @@
 
 			<ul class="rows">
 				{#each rows as s (s)}
+					{@const info = infoOf(s)}
 					<li class="skill">
 						<div class="who">
-							<strong>{s}{#if localIds.includes(s)}<code class="own">.arig/skills</code>{/if}</strong>
+							<strong>{s}{#if localIds.includes(s)}<code class="own">.arig/skills</code>{/if}{#if info?.version}<code class="ver" title="library version (arig.lock)">@{info.version}</code>{/if}{#if info?.source && info.source !== 'project'}<code class="src">{info.source}</code>{/if}</strong>
 							{#if desc(s)}<span>{desc(s)}</span>{/if}
 							<div class="states">
 								{#each active as t (t)}
@@ -255,6 +277,10 @@
 								{/each}
 							</div>
 						</div>
+						{#if info?.state === 'needs-confirm'}
+							<button class="ghost sm" disabled={!!busy} onclick={() => accept(s)}
+								title="This skill has safety flags: {info.flags.join(', ')}. Review it on skills.sh before accepting.">Accept {info.flags.join(', ')} &amp; install</button>
+						{/if}
 						{#if !localIds.includes(s)}
 							<button class="icon" onclick={() => unpin(s)} aria-label="Unpin {s}"><X size={15} /></button>
 						{/if}
@@ -263,7 +289,7 @@
 					<li class="empty muted">No skills yet. Search above to pin installed ones, or add the project's own skills to <code>.arig/skills/</code>.</li>
 				{/each}
 			</ul>
-			<p class="hint">{pending ? 'Press Apply to link the changes. ' : ''}Links point at your installed skills and are git-ignored; commit the .arig/ folder (its lock.json stays local). Apply never removes files arig didn't make.</p>
+			<p class="hint">{pending ? 'Press Apply to link the changes. ' : ''}Links point into the central library (~/.arig/library) and are git-ignored; commit the .arig/ folder, including arig.lock, which pins each skill's version (its lock.json stays local). Apply never removes files arig didn't make.</p>
 		{/if}
 	</div>
 {/if}
@@ -277,6 +303,9 @@
 	.body { padding: 24px; overflow-y: auto; max-width: 860px; }
 	.lead { margin: 0 0 16px; font-size: 15px; line-height: 1.6; }
 	code, .mono { font-family: var(--mono); font-size: 12px; }
+	.ver, .src { margin-left: 8px; font-size: 10.5px; font-weight: 400; color: var(--faint); }
+	.src { padding: 1px 6px; border: 1px solid var(--input); border-radius: var(--radius); }
+	.st.needs-confirm { color: var(--brand-text); border-color: var(--brand-line); }
 	.own { margin-left: 8px; padding: 1px 6px; border: 1px solid var(--input); border-radius: var(--radius); font-size: 10.5px; font-weight: 400; color: var(--brand-text); }
 	.heading { margin: 24px 0 10px; }
 	.heading:first-of-type { margin-top: 0; }
@@ -295,6 +324,7 @@
 	.chip { font-family: var(--mono); font-size: 10.5px; padding: 1px 6px; border: 1px solid var(--input); border-radius: var(--radius); color: var(--muted); }
 	.when { font-size: 11.5px; color: var(--faint); }
 	.rows li > .sm { margin-right: 16px; }
+	.rows li.skill > .sm { margin-right: 4px; height: 32px; padding: 0 12px; font-size: 12.5px; }
 	.more { margin-top: 12px; }
 	form { display: flex; gap: 8px; }
 	form input { flex: 1; min-width: 0; height: 40px; padding: 0 12px; border-radius: var(--radius); border: 1px solid var(--input); background: var(--hover); font-family: var(--mono); font-size: 13px; outline: none; }

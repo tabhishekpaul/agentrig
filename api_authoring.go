@@ -90,7 +90,7 @@ func registerAuthoring(mux *http.ServeMux) {
 			reply(w, nil, errNoSkill)
 			return
 		}
-		reply(w, map[string]bool{"ok": true}, os.WriteFile(filepath.Join(p, "SKILL.md"), []byte(req.Content), 0o644))
+		reply(w, map[string]bool{"ok": true}, authoring.Save(p, req.Content, adapters.SkillDirs()))
 	})
 	mux.HandleFunc("POST /api/authoring/draft", func(w http.ResponseWriter, r *http.Request) {
 		var req struct{ Name, Description string }

@@ -30,6 +30,7 @@ func setup(t *testing.T) (proj string, skills string) {
 		}
 	}
 	configDir = func() string { return filepath.Join(tmp, "cfg") }
+	t.Setenv("HOME", filepath.Join(tmp, "home")) // the library: $HOME/.arig/library
 	proj = filepath.Join(tmp, "proj")
 	os.MkdirAll(filepath.Join(proj, ".git"), 0o755)
 	return proj, skills

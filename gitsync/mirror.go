@@ -37,7 +37,12 @@ func ignored(name string, d fs.DirEntry) bool {
 // removes or overwrites in dst is first copied under backup (if backup != "").
 // dst itself is never removed, only its contents. A missing src counts as
 // empty. With addOnly, nothing in dst is removed (first sync on a machine).
-func mirror(src, dst, backup string, addOnly bool) (int, error) {
+// With dirsOnly, only src's top-level folders not starting with "." are
+// mirrored (the library: entries travel, its local logs and temp dirs don't).
+func mirror(src, dst, backup string, addOnly, dirsOnly bool) (int, error) {
+	local := func(root, p string, d fs.DirEntry) bool {
+		return dirsOnly && filepath.Dir(p) == root && (!d.IsDir() || strings.HasPrefix(d.Name(), "."))
+	}
 	changed := 0
 	keep := func(rel string) error {
 		if backup == "" {
@@ -56,7 +61,7 @@ func mirror(src, dst, backup string, addOnly bool) (int, error) {
 			return nil
 		}
 		rel, _ := filepath.Rel(dst, p)
-		if ignored(d.Name(), d) {
+		if ignored(d.Name(), d) || local(dst, p, d) {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -90,7 +95,7 @@ func mirror(src, dst, backup string, addOnly bool) (int, error) {
 			return err
 		}
 		rel, _ := filepath.Rel(src, p)
-		if p != src && ignored(d.Name(), d) {
+		if p != src && (ignored(d.Name(), d) || local(src, p, d)) {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}

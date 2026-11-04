@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/tabhishekpaul/agentrig"
@@ -25,7 +26,9 @@ Usage:
   arig              open the dashboard (starts the background server if needed)
   arig launch       same as arig
   arig app          open the dashboard in its own window instead of the browser
-  arig add <skill>...     pin skills to this project (.arig/arig.json) and link them in
+  arig install            resolve this project's skills from the central library (.arig/arig.lock), link them in
+  arig install --accept <owner/repo/skill>   also install a pinned skills.sh skill despite its safety flags
+  arig add <skill>...     pin skills (a name, or a skills.sh owner/repo/skill) to this project and link them in
   arig remove <skill>...  unpin skills from this project and unlink them
   arig apply              link this project's skills (.arig/) into every tool
   arig mcp          run the MCP server (stdio) that lets AI tools search, load and manage your skills
@@ -59,6 +62,8 @@ func main() {
 		}
 	case "add", "remove", "apply":
 		projectCmd(cmd, os.Args[2:])
+	case "install":
+		installCmd(os.Args[2:])
 	case "mcp": // stdout carries the protocol: errors go to stderr only
 		s := &mcpserver.Server{Entries: func() []catalog.Entry { return catalog.Local(adapters.Detect()) }, Version: version, Rig: rig()}
 		if err := s.Serve(os.Stdin, os.Stdout); err != nil {
@@ -121,7 +126,11 @@ func projectCmd(cmd string, args []string) {
 	}
 	links, err := projects.Apply(dir)
 	for _, l := range links {
-		fmt.Printf("  %-14s %-12s %s\n", l.State, l.Tool, l.Path)
+		v := ""
+		if l.Version != "" {
+			v = "@" + l.Version
+		}
+		fmt.Printf("  %-14s %-12s %s%s\n", l.State, l.Tool, l.Path, v)
 	}
 	if err != nil {
 		fail(err)
@@ -129,4 +138,84 @@ func projectCmd(cmd string, args []string) {
 	if len(links) == 0 {
 		fmt.Println("No skills pinned to this project. Add some with: arig add <skill>")
 	}
+}
+
+// installCmd resolves and links the current folder's skills, bun-style:
+// one line per skill with the version it resolved to and where from.
+func installCmd(args []string) {
+	var accept []string
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--accept" && i+1 < len(args) {
+			accept = append(accept, args[i+1])
+			i++
+			continue
+		}
+		fmt.Fprintln(os.Stderr, "usage: arig install [--accept <owner/repo/skill>]...")
+		os.Exit(2)
+	}
+	dir, err := os.Getwd()
+	if err != nil {
+		fail(err)
+	}
+	start := time.Now()
+	if err := projects.Add(dir); err != nil {
+		fail(err)
+	}
+	links, err := projects.Apply(dir, accept...)
+	fmt.Print(installSummary(links, time.Since(start)))
+	if err != nil {
+		fail(err)
+	}
+}
+
+func installSummary(links []projects.Link, took time.Duration) string {
+	var b strings.Builder
+	var order []string
+	by := map[string][]projects.Link{}
+	tools := map[string]bool{}
+	for _, l := range links {
+		if by[l.Skill] == nil {
+			order = append(order, l.Skill)
+		}
+		by[l.Skill] = append(by[l.Skill], l)
+		tools[l.Tool] = true
+	}
+	if len(order) == 0 {
+		return "No skills pinned to this project. Add some with: arig add <skill>\n"
+	}
+	ok := 0
+	for _, s := range order {
+		ls := by[s]
+		l := ls[0]
+		var problems []string
+		for _, x := range ls {
+			if x.State == "conflict" {
+				problems = append(problems, "your own folder is at "+x.Path)
+			}
+		}
+		switch {
+		case l.State == "needs-confirm":
+			fmt.Fprintf(&b, "! %s needs confirming (%s): arig install --accept %s\n", s, strings.Join(l.Flags, ", "), s)
+		case l.State == "not-installed":
+			fmt.Fprintf(&b, "x %s not found in the library or installed here\n", s)
+		default:
+			v := ""
+			if l.Version != "" {
+				v = "@" + l.Version
+			}
+			fmt.Fprintf(&b, "+ %s%s (%s)\n", s, v, l.Source)
+			ok++
+		}
+		for _, p := range problems {
+			fmt.Fprintf(&b, "  ! %s; left alone\n", p)
+		}
+	}
+	plural := func(n int, w string) string {
+		if n == 1 {
+			return fmt.Sprintf("%d %s", n, w)
+		}
+		return fmt.Sprintf("%d %ss", n, w)
+	}
+	fmt.Fprintf(&b, "\n%s linked into %s [%s]\n", plural(ok, "skill"), plural(len(tools), "tool"), took.Round(time.Millisecond))
+	return b.String()
 }
