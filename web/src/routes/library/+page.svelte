@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { Search, Trash2 } from '@lucide/svelte';
 	import { api } from '../../lib/api.js';
+	import { subLabel, catLabel } from '../../lib/labels.js';
 	import { store, count, load } from '../../lib/tools.svelte.js';
 	import ToolIcon from '../../lib/ToolIcon.svelte';
 
@@ -139,7 +140,7 @@
 					{#each c.subs as sub (sub.id)}
 						{@const m = catCount(sub.id)}
 						{#if m}
-							<button class="sub" class:active={cat === sub.id} onclick={() => (cat = sub.id)}>{sub.id.split('/')[1]} <span class="tabular">{m}</span></button>
+							<button class="sub" class:active={cat === sub.id} onclick={() => (cat = sub.id)}>{subLabel(sub.id)} <span class="tabular">{m}</span></button>
 						{/if}
 					{/each}
 				{/if}
@@ -153,7 +154,7 @@
 			<div class="body">
 				<div class="name">
 					<span>{i.name}</span>
-					<code class="meta">{kind === 'skill' ? catOf[i.id] ?? i.kind : i.kind}</code>
+					<code class="meta">{kind === 'skill' && catOf[i.id] ? catLabel(catOf[i.id]) : i.kind}</code>
 					{#if !tool}<span class="tool"><ToolIcon id={t.id} size={12} />{t.name}</span>{/if}
 				</div>
 				{#if i.description}<p>{i.description}</p>{/if}

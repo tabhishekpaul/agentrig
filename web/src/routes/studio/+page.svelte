@@ -1,6 +1,7 @@
 <script>
 	import { Sparkles, Plus, Upload, FolderOutput, Trash2, Pencil, Power, PowerOff, ExternalLink } from '@lucide/svelte';
 	import { api } from '../../lib/api.js';
+	import { subLabel, catLabel } from '../../lib/labels.js';
 	import { load } from '../../lib/tools.svelte.js';
 
 	const json = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -151,7 +152,7 @@
 						{#each info.categories as c}
 							<optgroup label={c.name}>
 								<option value={c.id}>{c.name}</option>
-								{#each c.subs ?? [] as s}<option value="{c.id}/{s}">{c.name} / {s}</option>{/each}
+								{#each c.subs ?? [] as s}<option value="{c.id}/{s}">{c.name} / {subLabel(s)}</option>{/each}
 							</optgroup>
 						{/each}
 					</select>
@@ -226,7 +227,7 @@
 				<input class="filter" bind:value={filter} placeholder="Filter installed skills" />
 				<div class="picker">
 					{#each info.skills.filter((s) => (s.id + ' ' + s.name).toLowerCase().includes(filter.toLowerCase())) as s (s.id)}
-						<label class="check"><input type="checkbox" value={s.id} bind:group={pack.skills} /> {s.name} <code>{s.category}</code></label>
+						<label class="check"><input type="checkbox" value={s.id} bind:group={pack.skills} /> {s.name} <code>{catLabel(s.category)}</code></label>
 					{/each}
 				</div>
 				<div class="actions">

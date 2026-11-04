@@ -1,6 +1,7 @@
 <script>
 	import { Search, Download, ExternalLink, TriangleAlert, Check, X, ArrowUpCircle, FolderSearch } from '@lucide/svelte';
 	import { api } from '../../lib/api.js';
+	import { subLabel, catLabel } from '../../lib/labels.js';
 	import { load } from '../../lib/tools.svelte.js';
 	import ToolIcon from '../../lib/ToolIcon.svelte';
 
@@ -182,7 +183,7 @@
 				<button class:on={!q.trim() && cat === c.id} onclick={() => ((q = ''), (cat = c.id))}>{c.name}</button>
 				{#if cat === c.id || cat.startsWith(c.id + '/')}
 					{#each c.subs as s}
-						<button class="sub" class:on={!q.trim() && cat === c.id + '/' + s} onclick={() => ((q = ''), (cat = c.id + '/' + s))}>{s}</button>
+						<button class="sub" class:on={!q.trim() && cat === c.id + '/' + s} onclick={() => ((q = ''), (cat = c.id + '/' + s))}>{subLabel(s)}</button>
 					{/each}
 				{/if}
 			{/each}
@@ -253,7 +254,7 @@
 	{#if sel && tab !== 'installed'}
 		<aside class="detail">
 			<button class="close" onclick={() => ((sel = null), (confirm = null))} aria-label="Close"><X size={16} /></button>
-			<span class="label-mono">{sel.category}</span>
+			<span class="label-mono">{catLabel(sel.category)}</span>
 			<h2>{sel.name} {#if sel.installed}<span class="badge"><Check size={11} /> installed</span>{/if}</h2>
 			{#if !sel.loaded}
 				<p class="muted">Fetching the skill…</p>
@@ -327,7 +328,7 @@
 			<div class="body">
 				<div class="name">
 					<span>{e.name}</span>
-					<span class="cat">{e.category}</span>
+					<span class="cat">{catLabel(e.category)}</span>
 					{#if e.installed}<span class="badge"><Check size={11} /> installed</span>{/if}
 				</div>
 				{#if reasons?.length}<p class="why">{reasons.join(' · ')}</p>{:else}<p class="src">{e.source}</p>{/if}
@@ -387,7 +388,7 @@
 
 	.split { flex: 1; min-height: 0; display: flex; }
 	.cats { width: 196px; flex: none; display: flex; flex-direction: column; gap: 1px; padding: 12px 8px; border-inline-end: 1px solid var(--border); overflow-y: auto; }
-	.cats button { display: flex; align-items: center; justify-content: space-between; height: 30px; padding: 0 10px; border: 0; background: none; border-radius: var(--radius); font-size: 13px; color: var(--foreground); cursor: pointer; text-align: left; text-transform: capitalize; }
+	.cats button { display: flex; align-items: center; justify-content: space-between; height: 30px; padding: 0 10px; border: 0; background: none; border-radius: var(--radius); font-size: 13px; color: var(--foreground); cursor: pointer; text-align: left; }
 	.cats button.sub { padding-left: 22px; color: var(--muted); font-size: 12.5px; }
 	.cats button:hover { background: var(--accent); }
 	.cats button.on { background: var(--selected); color: var(--brand-text); font-weight: 500; }
