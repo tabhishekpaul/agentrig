@@ -1,6 +1,6 @@
-// agentrig: a local dashboard for the skills, plugins and MCP servers
+// Package agentrig is a local dashboard for the skills, plugins and MCP servers
 // installed across your AI coding tools.
-package main
+package agentrig
 
 import (
 	"crypto/rand"
@@ -21,7 +21,8 @@ import (
 //go:embed all:web/build
 var webBuild embed.FS
 
-func main() {
+// Run starts the local dashboard server; it blocks until the server stops.
+func Run() {
 	addr := flag.String("addr", "127.0.0.1:0", "listen address (keep it on loopback)")
 	noOpen := flag.Bool("no-open", false, "don't open the browser")
 	flag.Parse()
@@ -39,7 +40,7 @@ func main() {
 	mux.Handle("/", spa(ui))
 
 	url := fmt.Sprintf("http://%s/?token=%s", host, token)
-	fmt.Println("agentrig running at", url)
+	fmt.Println("arig running at", url)
 	if !*noOpen {
 		openBrowser(url)
 	}

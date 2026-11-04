@@ -1,4 +1,4 @@
-package main
+package agentrig
 
 import (
 	"encoding/json"
