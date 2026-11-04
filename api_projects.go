@@ -143,7 +143,9 @@ func registerProjects(mux *http.ServeMux) {
 			linksReply(w, ls, err)
 		}
 	})
-	// Install a pinned skills.sh skill whose safety flags the user accepted.
+	// Install a pinned skills.sh skill the user reviewed: "owner/repo/skill@hash"
+	// accepts exactly that download (its flags, or a hash that differs from
+	// arig.lock), recorded on this machine only.
 	mux.HandleFunc("POST /api/projects/accept", func(w http.ResponseWriter, r *http.Request) {
 		p, ok := project(w, r)
 		if !ok {
@@ -152,7 +154,7 @@ func registerProjects(mux *http.ServeMux) {
 		var req struct {
 			Skill string `json:"skill"`
 		}
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil || !projects.Remote(req.Skill) {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil || !projects.Remote(strings.SplitN(req.Skill, "@", 2)[0]) {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}

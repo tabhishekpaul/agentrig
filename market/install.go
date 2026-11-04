@@ -187,10 +187,24 @@ func writeFiles(files []File, dst string) error {
 	return nil
 }
 
+// Stage writes a download to a temporary folder and returns it with its
+// library hash, so a caller can decide before anything enters the library.
+// The caller removes the folder (library.Adopt moves it in).
+func (m *Market) Stage(d Download) (dir, hash string, err error) {
+	if dir, err = m.stage(d); err != nil {
+		return "", "", err
+	}
+	if hash, err = library.Hash(dir); err != nil {
+		os.RemoveAll(dir)
+		return "", "", err
+	}
+	return dir, hash, nil
+}
+
 // ToLibrary puts a downloaded skill into the central library as id
 // (owner/repo/skill) and returns the entry path.
 func (m *Market) ToLibrary(id string, d Download) (string, error) {
-	staged, err := m.stage(d)
+	staged, _, err := m.Stage(d)
 	if err != nil {
 		return "", err
 	}

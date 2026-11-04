@@ -27,7 +27,8 @@ Usage:
   arig launch       same as arig
   arig app          open the dashboard in its own window instead of the browser
   arig install            resolve this project's skills from the central library (.arig/arig.lock), link them in
-  arig install --accept <owner/repo/skill>   also install a pinned skills.sh skill despite its safety flags
+  arig install --accept <owner/repo/skill>   install that pinned skills.sh skill as downloaded now, despite
+                          safety flags or a version that differs from arig.lock (remembered on this machine)
   arig add <skill>...     pin skills (a name, or a skills.sh owner/repo/skill) to this project and link them in
   arig remove <skill>...  unpin skills from this project and unlink them
   arig apply              link this project's skills (.arig/) into every tool
@@ -195,7 +196,10 @@ func installSummary(links []projects.Link, took time.Duration) string {
 		}
 		switch {
 		case l.State == "needs-confirm":
-			fmt.Fprintf(&b, "! %s needs confirming (%s): arig install --accept %s\n", s, strings.Join(l.Flags, ", "), s)
+			fmt.Fprintf(&b, "! %s@%s needs confirming (flags: %s): arig install --accept %s\n", s, short(l.Offered), flagList(l.Flags), s)
+		case l.State == "version-changed":
+			fmt.Fprintf(&b, "! %s download is %s but arig.lock pins %s (flags: %s); not installed. Review it, then: arig install --accept %s\n",
+				s, short(l.Offered), short(l.Locked), flagList(l.Flags), s)
 		case l.State == "not-installed":
 			fmt.Fprintf(&b, "x %s not found in the library or installed here\n", s)
 		default:
@@ -218,4 +222,13 @@ func installSummary(links []projects.Link, took time.Duration) string {
 	}
 	fmt.Fprintf(&b, "\n%s linked into %s [%s]\n", plural(ok, "skill"), plural(len(tools), "tool"), took.Round(time.Millisecond))
 	return b.String()
+}
+
+func short(h string) string { return h[:min(len(h), 8)] }
+
+func flagList(f []string) string {
+	if len(f) == 0 {
+		return "none"
+	}
+	return strings.Join(f, ", ")
 }

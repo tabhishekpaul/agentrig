@@ -151,7 +151,7 @@
 	// The project's own skills (.arig/skills) come from the folder, not the pin list.
 	const localIds = $derived([...new Set(links.filter((l) => l.local).map((l) => l.skill))]);
 	const rows = $derived([...localIds, ...(manifest?.skills ?? []).filter((s) => !localIds.includes(s))]);
-	const label = { linked: 'linked', missing: 'not linked yet', 'not-installed': 'not in the library', conflict: 'your own file is here', 'needs-confirm': 'needs confirm' };
+	const label = { linked: 'linked', missing: 'not linked yet', 'not-installed': 'not in the library', conflict: 'your own file is here', 'needs-confirm': 'needs confirm', 'version-changed': 'version changed' };
 	// Version and source are the same in every tool: take the first link's.
 	const infoOf = (skill) => links.find((l) => l.skill === skill);
 </script>
@@ -277,9 +277,12 @@
 								{/each}
 							</div>
 						</div>
-						{#if info?.state === 'needs-confirm'}
-							<button class="ghost sm" disabled={!!busy} onclick={() => accept(s)}
-								title="This skill has safety flags: {info.flags.join(', ')}. Review it on skills.sh before accepting.">Accept {info.flags.join(', ')} &amp; install</button>
+						{#if info?.state === 'needs-confirm' || info?.state === 'version-changed'}
+							<button class="ghost sm" disabled={!!busy} onclick={() => accept(s + '@' + info.offered)}
+								title={info.state === 'version-changed'
+									? `skills.sh now serves ${info.offered.slice(0, 8)}, arig.lock pins ${info.locked.slice(0, 8)}. Review it on skills.sh before accepting.`
+									: `Safety flags: ${(info.flags ?? []).join(', ')}. Review it on skills.sh before accepting.`}
+							>Accept {info.state === 'version-changed' ? '@' + info.offered.slice(0, 8) : (info.flags ?? []).join(', ')} &amp; install</button>
 						{/if}
 						{#if !localIds.includes(s)}
 							<button class="icon" onclick={() => unpin(s)} aria-label="Unpin {s}"><X size={15} /></button>
@@ -305,7 +308,7 @@
 	code, .mono { font-family: var(--mono); font-size: 12px; }
 	.ver, .src { margin-left: 8px; font-size: 10.5px; font-weight: 400; color: var(--faint); }
 	.src { padding: 1px 6px; border: 1px solid var(--input); border-radius: var(--radius); }
-	.st.needs-confirm { color: var(--brand-text); border-color: var(--brand-line); }
+	.st.needs-confirm, .st.version-changed { color: var(--brand-text); border-color: var(--brand-line); }
 	.own { margin-left: 8px; padding: 1px 6px; border: 1px solid var(--input); border-radius: var(--radius); font-size: 10.5px; font-weight: 400; color: var(--brand-text); }
 	.heading { margin: 24px 0 10px; }
 	.heading:first-of-type { margin-top: 0; }

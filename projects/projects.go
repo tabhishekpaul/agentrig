@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -179,11 +180,13 @@ type Link struct {
 	Skill   string   `json:"skill"` // the pin: a name or owner/repo/skill
 	Tool    string   `json:"tool"`
 	Path    string   `json:"path"`              // relative to the project
-	State   string   `json:"state"`             // linked | missing | not-installed | needs-confirm | conflict (a file arig didn't make)
+	State   string   `json:"state"`             // linked | missing | not-installed | needs-confirm | version-changed | conflict (a file arig didn't make)
 	Local   bool     `json:"local,omitempty"`   // from the project's own .arig/skills
 	Version string   `json:"version,omitempty"` // short library hash
 	Source  string   `json:"source,omitempty"`  // project | library | skills.sh
-	Flags   []string `json:"flags,omitempty"`   // safety flags waiting for confirmation
+	Flags   []string `json:"flags,omitempty"`   // safety flags of a held-back download
+	Locked  string   `json:"locked,omitempty"`  // held back: the hash arig.lock pins
+	Offered string   `json:"offered,omitempty"` // held back: the hash of what was downloaded
 }
 
 type lockEntry struct {
@@ -260,11 +263,14 @@ func tools(m Manifest) []string {
 
 // resolved is where one pin comes from.
 type resolved struct {
-	Path   string // what the links point to; "" = not available here
-	Hash   string // library hash ("" for project skills and not-yet-stored globals)
-	Source string // project | library | skills.sh
-	Flags  []string
-	global bool // Path is an installed global skill not in the library yet
+	Path    string // what the links point to; "" = not available here
+	Hash    string // library hash ("" for project skills and not-yet-stored globals)
+	Source  string // project | library | skills.sh
+	Flags   []string
+	State   string // needs-confirm | version-changed: downloaded but held back
+	Locked  string // hash in arig.lock, when held back
+	Offered string // hash of the download held back
+	global  bool   // Path is an installed global skill not in the library yet
 }
 
 func isDir(p string) bool { fi, err := os.Stat(p); return err == nil && fi.IsDir() }
@@ -308,9 +314,17 @@ func resolve(dir string, m Manifest, pins map[string]string) map[string]resolved
 }
 
 // fetch fills in what resolve couldn't: a global skill is put into the
-// library; a skills.sh id is downloaded into it, unless it carries safety
-// flags that nobody accepted (not locked before, not in accept), in which
-// case it waits as needs-confirm.
+// library; a skills.sh id is downloaded and staged, then checked before it
+// goes in. arig.lock is committed, so it may come from someone else and is
+// never taken as this user's consent:
+//   - a pin whose download hashes differently from arig.lock is not
+//     installed (version-changed) unless accepted in this call;
+//   - a download with safety flags installs only if this exact (id, hash)
+//     was accepted on this machine (accepted.json), or is accepted now.
+//
+// accept holds ids ("owner/repo/skill", whatever is downloaded now) or
+// "owner/repo/skill@hash" (only that version); what it accepts is recorded
+// in accepted.json.
 func fetch(r map[string]resolved, pins map[string]string, accept []string) error {
 	var mk *market.Market
 	var errs []error
@@ -332,12 +346,32 @@ func fetch(r map[string]resolved, pins map[string]string, accept []string) error
 				errs = append(errs, err)
 				continue
 			}
-			if f := market.Flags(dl.Files); len(f) > 0 && pins[pin] == "" && !slices.Contains(accept, pin) {
-				x.Flags = f
+			staged, h, err := mk.Stage(dl)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", pin, err))
+				continue
+			}
+			now := slices.Contains(accept, pin) || slices.Contains(accept, pin+"@"+h)
+			flags := market.Flags(dl.Files)
+			x.Flags, x.Locked, x.Offered = flags, pins[pin], h
+			switch {
+			case pins[pin] != "" && pins[pin] != h && !now:
+				x.State = "version-changed"
+			case len(flags) > 0 && !now && !accepted(pin, h):
+				x.State = "needs-confirm"
+			}
+			if x.State != "" {
+				os.RemoveAll(staged)
 				r[pin] = x
 				continue
 			}
-			p, err := mk.ToLibrary(pin, dl)
+			if now {
+				if err := recordAccepted(pin, h); err != nil {
+					errs = append(errs, err)
+				}
+			}
+			p, err := library.Adopt(staged, pin)
+			os.RemoveAll(staged) // gone already if it was moved in
 			if err != nil {
 				errs = append(errs, fmt.Errorf("%s: %w", pin, err))
 				continue
@@ -346,6 +380,32 @@ func fetch(r map[string]resolved, pins map[string]string, accept []string) error
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// accepted.json (machine-local, in arig's config folder): skills.sh id ->
+// library hashes this user accepted despite their safety flags.
+func acceptedFile() string { return filepath.Join(configDir(), "accepted.json") }
+
+func readAccepted() map[string][]string {
+	a := map[string][]string{}
+	b, _ := os.ReadFile(acceptedFile())
+	_ = json.Unmarshal(b, &a)
+	return a
+}
+
+func accepted(id, hash string) bool { return slices.Contains(readAccepted()[id], hash) }
+
+func recordAccepted(id, hash string) error {
+	a := readAccepted()
+	if slices.Contains(a[id], hash) {
+		return nil
+	}
+	a[id] = append(a[id], hash)
+	if err := os.MkdirAll(configDir(), 0o700); err != nil {
+		return err
+	}
+	b, _ := json.MarshalIndent(a, "", "  ")
+	return os.WriteFile(acceptedFile(), append(b, '\n'), 0o600)
 }
 
 // Status reports every skill × tool in the manifest without changing anything.
@@ -373,11 +433,11 @@ func status(dir string, m Manifest, r map[string]resolved, lock []lockEntry) []L
 			x := r[s]
 			rel := filepath.ToSlash(filepath.Join(toolDir(t), linkName(s)))
 			l := Link{Skill: s, Tool: t, Path: rel, State: "missing", Local: x.Source == "project",
-				Version: short(x.Hash), Source: x.Source, Flags: x.Flags}
+				Version: short(x.Hash), Source: x.Source}
 			src, mine := ours[rel]
 			switch {
-			case len(x.Flags) > 0:
-				l.State = "needs-confirm"
+			case x.State != "":
+				l.State, l.Flags, l.Locked, l.Offered = x.State, x.Flags, x.Locked, x.Offered
 			case mine && x.Path != "" && src == x.Path:
 				l.State = "linked"
 			case !mine && exists(filepath.Join(dir, rel)):
@@ -443,13 +503,15 @@ func Apply(dir string, accept ...string) ([]Link, error) {
 			next[s] = pins[s] // not available here: keep the team's pin
 		}
 	}
-	if err := writePins(dir, next); err != nil {
-		return nil, err
+	if !maps.Equal(next, pins) { // unchanged pins leave the committed file byte-for-byte alone
+		if err := writePins(dir, next); err != nil {
+			return nil, err
+		}
 	}
 
 	want := map[string]string{}
 	for _, l := range status(dir, m, r, nil) {
-		if x := r[l.Skill]; x.Path != "" && len(x.Flags) == 0 {
+		if x := r[l.Skill]; x.Path != "" && x.State == "" {
 			want[l.Path] = x.Path
 		}
 	}

