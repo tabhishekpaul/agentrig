@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/tabhishekpaul/agentrig/catalog"
@@ -23,6 +24,7 @@ const latestProtocol = "2025-06-18"
 type Server struct {
 	Entries func() []catalog.Entry
 	Version string
+	Rig     *Rig // nil: only the skill-loading tools work
 }
 
 type request struct {
@@ -98,7 +100,7 @@ func (s *Server) dispatch(req request) (any, *rpcError) {
 	case "ping":
 		return map[string]any{}, nil
 	case "tools/list":
-		return map[string]any{"tools": tools}, nil
+		return map[string]any{"tools": append(slices.Clip(tools), rigTools...)}, nil
 	case "tools/call":
 		var p struct {
 			Name      string          `json:"name"`
@@ -120,7 +122,10 @@ func (s *Server) dispatch(req request) (any, *rpcError) {
 		case "list_categories":
 			text = s.categories()
 		default:
-			return nil, &rpcError{-32602, "unknown tool " + p.Name}
+			var ok bool
+			if text, ok, err = s.rig(p.Name, p.Arguments); !ok {
+				return nil, &rpcError{-32602, "unknown tool " + p.Name}
+			}
 		}
 		if err != nil {
 			return toolResult(err.Error(), true), nil
@@ -135,7 +140,8 @@ func toolResult(text string, isErr bool) map[string]any {
 }
 
 const instructions = "arig indexes every agent skill installed on this computer, including ones not loaded into this session. " +
-	"Before starting any non-trivial task, call search_skills with a few words describing the task; if a result fits, call get_skill and follow its instructions."
+	"Before starting any non-trivial task, call search_skills with a few words describing the task; if a result fits, call get_skill and follow its instructions. " +
+	"To manage the user's setup (find new skills on skills.sh, install, switch on/off, remove, cut token use), start with rig_overview."
 
 type tool struct {
 	Name        string         `json:"name"`
