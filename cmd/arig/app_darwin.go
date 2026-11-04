@@ -92,7 +92,7 @@ func window(url string) error {
 	w.SetTitle("Agentrig")
 	w.SetSize(1320, 860, webview.HintNone)
 	win := w.Window()
-	C.overlayTitlebar(win, 18, 21) // centred in the sidebar's 56 px brand row
+	C.overlayTitlebar(win, 16, 14) // on their own strip at the top of the sidebar, above the name
 	C.watchDrags(win)
 	_ = w.Bind("arigDragArea", func(on bool) { C.setDragArea(C.BOOL(on)) })
 	// The webview can't open new windows: send links that leave the dashboard
