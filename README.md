@@ -47,9 +47,25 @@ Planned:
 - MCP server toggles
 - API keys kept in the OS keychain, never in the repo
 
-## Run
+## Install
 
-Requires Go 1.27+ and Node 20+ to build.
+macOS and Linux:
+
+```sh
+curl -fsSL https://tabhishekpaul.github.io/agentrig/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://tabhishekpaul.github.io/agentrig/install.ps1 | iex
+```
+
+The installer downloads the latest release, checks it against the published SHA-256 checksum, installs `arig` to `~/.arig/bin` (`%LOCALAPPDATA%\arig\bin` on Windows), adds it to your PATH and starts the dashboard.
+
+## Build from source
+
+Requires Go 1.27+ and Node 20+.
 
 ```sh
 cd web && npm install && npm run build && cd ..
@@ -98,8 +114,14 @@ api.go       /api routes
 adapters/    one file per AI tool
 gitsync/     sync between machines through git
 web/         SvelteKit UI (built into the binary)
+site/        website and install scripts (GitHub Pages)
+.github/     CI, release and Pages workflows
 ```
 
 ## License
 
 MIT
+
+## Releasing
+
+CI and releases are manual for now. To publish a version: GitHub › Actions › **release** › Run workflow, and enter a version like `v0.1.0`. It builds macOS, Linux and Windows binaries (Intel and ARM), publishes them with `checksums.txt` on GitHub Releases, and the install scripts pick up the latest one automatically. The website deploys on its own whenever `site/` changes on `main`.

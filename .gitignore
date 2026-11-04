@@ -3,3 +3,4 @@ web/build/
 web/.svelte-kit/
 /arig
 .DS_Store
+site/icon.svg

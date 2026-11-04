@@ -11,6 +11,9 @@ import (
 	"github.com/tabhishekpaul/agentrig"
 )
 
+// version is set at release build time (-ldflags "-X main.version=v1.2.3").
+var version = "dev"
+
 const usage = `The dashboard is always on at http://arig.localhost:7377 once arig has run once:
 it starts at login and runs in the background.
 
@@ -18,6 +21,7 @@ Usage:
   arig              open the dashboard (starts the background server if needed)
   arig launch       same as arig
   arig uninstall    stop the background server and stop starting it at login
+  arig version      print the version
 `
 
 func main() {
@@ -46,6 +50,8 @@ func main() {
 			fail(err)
 		}
 		fmt.Println("arig background server stopped and removed from login items.")
+	case "version", "-v", "--version":
+		fmt.Println("arig", version)
 	case "-h", "--help", "help":
 		fmt.Print(banner("skills, plugins and MCP servers across your AI coding tools"), "\n", usage)
 	default:
