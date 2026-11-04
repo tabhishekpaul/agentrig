@@ -24,10 +24,12 @@
 
 <div class="shell">
 	<aside>
-		<a href="/" class="brand">
-			<Logo size={28} />
-			<span>agentrig</span>
-		</a>
+		<div class="brand-row" data-drag>
+			<a href="/" class="brand">
+				<Logo size={28} />
+				<span>Agentrig</span>
+			</a>
+		</div>
 		<nav>
 			{#each nav as n}
 				<a href={n.href} class="row" class:active={page.url.pathname === n.href && !toolParam}>
@@ -47,13 +49,19 @@
 			{/each}
 		</nav>
 	</aside>
-	<main>{@render children()}</main>
+	<main>
+		<div class="drag-strip" data-drag aria-hidden="true"></div>
+		{@render children()}
+	</main>
 </div>
 
 <style>
 	.shell { display: flex; height: 100vh; }
 	aside { width: 248px; flex: none; display: flex; flex-direction: column; background: var(--chrome); border-inline-end: 1px solid var(--border); }
-	.brand { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 14px; font-weight: 600; letter-spacing: -0.02em; font-size: 15px; color: var(--foreground); text-decoration: none; border-bottom: 1px solid var(--border); }
+	.brand-row { flex: none; display: flex; align-items: center; height: 56px; padding: 0 14px; border-bottom: 1px solid var(--border); }
+	/* in the macOS app the native window buttons sit at the start of this row */
+	:global(.app-mac) .brand-row { padding-left: 84px; }
+	.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -0.02em; font-size: 15px; color: var(--foreground); text-decoration: none; }
 	nav { display: flex; flex-direction: column; gap: 1px; padding: 12px 8px; overflow-y: auto; }
 	.row { position: relative; display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border-radius: var(--radius); color: var(--foreground); text-decoration: none; font-size: 13px; transition: background 0.12s; }
 	.row:hover { background: var(--accent); }
@@ -64,5 +72,8 @@
 	.label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.count { font-family: var(--mono); font-size: 11px; color: var(--muted); }
 	.section { height: 28px; display: flex; align-items: center; margin-top: 16px; padding: 0 10px; }
-	main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--background); overflow: hidden; }
+	/* macOS app: the top edge of every page moves the window, even pages without a header */
+	.drag-strip { display: none; }
+	:global(.app-mac) .drag-strip { display: block; position: absolute; top: 0; left: 0; right: 0; height: 16px; z-index: 50; }
+	main { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--background); overflow: hidden; }
 </style>

@@ -21,6 +21,18 @@ const externalLinks = `document.addEventListener('click', (e) => {
 	if (u.origin !== location.origin) { e.preventDefault(); window.arigOpen(u.href); }
 }, true);`
 
+// windowChrome marks the page as the macOS app (CSS makes room for the window
+// buttons) and lets headers move the window: drag to move, double-click to
+// zoom, like a native title bar. Controls inside headers still work.
+const windowChrome = `
+document.documentElement.classList.add('app-mac');
+let arigDrag = false;
+const dragArea = (t) =>
+	!!(t.closest && !t.closest('button, a, input, select, textarea, label, [role=switch], [contenteditable]') && t.closest('header, [data-drag]'));
+const setDrag = (on) => { if (on !== arigDrag) { arigDrag = on; window.arigDragArea(on); } };
+document.addEventListener('mousemove', (e) => setDrag(dragArea(e.target)), true);
+document.addEventListener('mouseleave', () => setDrag(false));`
+
 // openExternal is the only thing the app window may ask of the OS: open an
 // http(s) link in the browser. Other schemes (file:, app handlers) are refused,
 // since the dashboard shows third-party text from skills.sh.

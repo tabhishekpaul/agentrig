@@ -4,7 +4,7 @@
 	let { size = 28 } = $props();
 </script>
 
-<span class="logo" style="width: {size}px; height: {size}px" role="img" aria-label="agentrig">{@html svg}</span>
+<span class="logo" style="width: {size}px; height: {size}px" role="img" aria-label="Agentrig">{@html svg}</span>
 
 <style>
 	.logo { display: inline-block; flex: none; }

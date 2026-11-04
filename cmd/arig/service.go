@@ -123,7 +123,7 @@ func ensureService() error {
 	switch runtime.GOOS {
 	case "darwin":
 		if err := installBundle(exe); err != nil {
-			fmt.Fprintln(os.Stderr, "arig: couldn't create agentrig.app:", err) // the server matters more
+			fmt.Fprintln(os.Stderr, "arig: couldn't create Agentrig.app:", err) // the server matters more
 		}
 		changed, err := writeIfChanged(plistPath(), plist(exe))
 		if err != nil {

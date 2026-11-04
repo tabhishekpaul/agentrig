@@ -11,15 +11,28 @@ import (
 var appIcns []byte
 
 // bundleDir is the macOS app that opens arig's window from Spotlight,
-// Launchpad or the Dock: ~/Applications/agentrig.app.
+// Launchpad or the Dock: ~/Applications/Agentrig.app.
 func bundleDir() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, "Applications", "agentrig.app")
+	return filepath.Join(home, "Applications", "Agentrig.app")
 }
 
-// installBundle writes (or refreshes) agentrig.app. It only launches
+// renameOldBundle gives an agentrig.app from an older arig its capitalised
+// name (the disk is usually case-insensitive, so it's the same folder).
+func renameOldBundle() {
+	dir := filepath.Dir(bundleDir())
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if e.Name() == "agentrig.app" {
+			_ = os.Rename(filepath.Join(dir, e.Name()), bundleDir())
+		}
+	}
+}
+
+// installBundle writes (or refreshes) Agentrig.app. It only launches
 // `arig app`, so updating arig never needs the bundle rebuilt beyond the path.
 func installBundle(exe string) error {
+	renameOldBundle()
 	c := filepath.Join(bundleDir(), "Contents")
 	files := []struct {
 		path, data string
@@ -49,8 +62,8 @@ const infoPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleName</key><string>agentrig</string>
-	<key>CFBundleDisplayName</key><string>agentrig</string>
+	<key>CFBundleName</key><string>Agentrig</string>
+	<key>CFBundleDisplayName</key><string>Agentrig</string>
 	<key>CFBundleIdentifier</key><string>dev.agentrig.app</string>
 	<key>CFBundleExecutable</key><string>agentrig</string>
 	<key>CFBundleIconFile</key><string>agentrig</string>
