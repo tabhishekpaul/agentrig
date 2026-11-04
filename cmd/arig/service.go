@@ -105,13 +105,15 @@ func ensureService() error {
 		return err
 	}
 	running := agentrig.Running(agentrig.DefaultPort)
+	// A server from an older build (arig was upgraded) must be restarted too.
+	stale := running && agentrig.RunningBuild(agentrig.DefaultPort) != agentrig.Build
 	switch runtime.GOOS {
 	case "darwin":
 		changed, err := writeIfChanged(plistPath(), plist(exe))
 		if err != nil {
 			return err
 		}
-		if changed || !running {
+		if changed || !running || stale {
 			_ = run("launchctl", "bootout", launchdTarget()+"/"+label) // drop a stale registration
 			if err := run("launchctl", "bootstrap", launchdTarget(), plistPath()); err != nil {
 				return err
@@ -122,7 +124,7 @@ func ensureService() error {
 		if err != nil {
 			return err
 		}
-		if changed || !running {
+		if changed || !running || stale {
 			for _, args := range [][]string{{"daemon-reload"}, {"enable", "arig.service"}, {"restart", "arig.service"}} {
 				if err := run("systemctl", append([]string{"--user"}, args...)...); err != nil {
 					return err
@@ -135,7 +137,10 @@ func ensureService() error {
 		if err := run("reg", "add", winRunKey, "/v", "arig", "/t", "REG_SZ", "/d", `"`+exe+`" serve`, "/f"); err != nil {
 			return err
 		}
-		if !running {
+		if stale {
+			_ = run("taskkill", "/F", "/IM", "arig.exe") // ponytail: also stops a foreground arig
+		}
+		if !running || stale {
 			if err := exec.Command(exe, "serve").Start(); err != nil {
 				return err
 			}
@@ -144,7 +149,7 @@ func ensureService() error {
 		return fmt.Errorf("background mode isn't supported on %s yet", runtime.GOOS)
 	}
 	for i := 0; i < 40; i++ {
-		if agentrig.Running(agentrig.DefaultPort) {
+		if agentrig.RunningBuild(agentrig.DefaultPort) == agentrig.Build {
 			return nil
 		}
 		time.Sleep(250 * time.Millisecond)

@@ -3,6 +3,7 @@
 package agentrig
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -10,12 +11,17 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/tabhishekpaul/agentrig/adapters"
+	"github.com/tabhishekpaul/agentrig/gitsync"
 )
 
 //go:embed all:web/build
@@ -27,6 +33,19 @@ const DefaultPort = 7377
 // URL is the dashboard address for a port. *.localhost always resolves to
 // this machine (browsers and the OS resolver), so no hosts-file edits.
 func URL(port int) string { return fmt.Sprintf("http://arig.localhost:%d", port) }
+
+// SyncEvery is how often the always-on server syncs when a repo is connected.
+const SyncEvery = 15 * time.Minute
+
+func newSyncer() *gitsync.Syncer {
+	home, _ := os.UserHomeDir()
+	cfg, _ := os.UserConfigDir()
+	return &gitsync.Syncer{
+		Home:  home,
+		Dir:   filepath.Join(cfg, "agentrig"),
+		State: gitsync.State{Export: adapters.PluginStates, Apply: adapters.ApplyPluginStates},
+	}
+}
 
 // ErrRunning means another arig already serves the port.
 var ErrRunning = errors.New("arig is already running")
@@ -54,11 +73,14 @@ func Launch(port int, open bool) error {
 		lns = append(lns, ln6)
 	}
 
+	syncer := newSyncer()
+	go syncer.Loop(context.Background(), SyncEvery)
+
 	ui, _ := fs.Sub(webBuild, "web/build")
 	mux := http.NewServeMux()
-	registerAPI(mux)
+	registerAPI(mux, syncer)
 	mux.HandleFunc("GET /api/ping", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, map[string]string{"app": "arig"})
+		writeJSON(w, map[string]string{"app": "arig", "build": Build})
 	})
 	mux.Handle("/", spa(ui))
 	h := guard(port, mux)
@@ -74,18 +96,41 @@ func Launch(port int, open bool) error {
 	return <-errc
 }
 
+// Build identifies this binary, captured at start: after an upgrade replaces
+// the file, a running old server still reports its own build.
+var Build = func() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	st, err := os.Stat(exe)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%d-%d", st.Size(), st.ModTime().UnixNano())
+}()
+
 // Running reports whether arig is serving on port.
-func Running(port int) bool {
+func Running(port int) bool { return RunningBuild(port) != "" }
+
+// RunningBuild returns the Build of the arig serving port ("" if none).
+func RunningBuild(port int) string {
 	req, _ := http.NewRequest("GET", fmt.Sprintf("http://127.0.0.1:%d/api/ping", port), nil)
 	req.Host = fmt.Sprintf("arig.localhost:%d", port)
 	req.Header.Set(apiHeader, "1")
 	res, err := (&http.Client{Timeout: time.Second}).Do(req)
 	if err != nil {
-		return false
+		return ""
 	}
 	defer res.Body.Close()
-	var body struct{ App string }
-	return json.NewDecoder(res.Body).Decode(&body) == nil && body.App == "arig"
+	var body struct{ App, Build string }
+	if json.NewDecoder(res.Body).Decode(&body) != nil || body.App != "arig" {
+		return ""
+	}
+	if body.Build == "" {
+		return "unknown" // an older arig without build info
+	}
+	return body.Build
 }
 
 const apiHeader = "X-Arig"

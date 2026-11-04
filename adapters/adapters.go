@@ -89,3 +89,36 @@ func frontmatter(path string) (name, desc string) {
 	}
 	return
 }
+
+// PluginStates returns tool -> plugin id -> enabled for every plugin that can
+// be switched, for syncing between machines.
+func PluginStates() map[string]map[string]bool {
+	out := map[string]map[string]bool{}
+	for _, t := range Detect() {
+		for _, i := range t.Items {
+			if i.Kind == "plugin" && i.Toggleable {
+				if out[t.ID] == nil {
+					out[t.ID] = map[string]bool{}
+				}
+				out[t.ID][i.ID] = i.Enabled
+			}
+		}
+	}
+	return out
+}
+
+// ApplyPluginStates switches plugins that are installed here to match want.
+// Plugins not installed on this machine are left alone.
+func ApplyPluginStates(want map[string]map[string]bool) error {
+	have := PluginStates()
+	for tool, ps := range want {
+		for id, on := range ps {
+			if cur, ok := have[tool][id]; ok && cur != on {
+				if err := Toggle(tool, "plugin", id, on); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}

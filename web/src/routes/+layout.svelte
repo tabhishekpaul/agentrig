@@ -1,7 +1,7 @@
 <script>
 	import '../app.css';
 	import { page } from '$app/state';
-	import { House, Library, Layers } from '@lucide/svelte';
+	import { House, Library, Layers, RefreshCw } from '@lucide/svelte';
 	import { store, load } from '../lib/tools.svelte.js';
 	let { children } = $props();
 	load();
@@ -9,7 +9,8 @@
 	const toolParam = $derived(page.url.searchParams.get('tool'));
 	const nav = [
 		{ href: '/', label: 'Home', icon: House },
-		{ href: '/library', label: 'Library', icon: Library }
+		{ href: '/library', label: 'Library', icon: Library },
+		{ href: '/sync', label: 'Sync', icon: RefreshCw }
 	];
 </script>
 

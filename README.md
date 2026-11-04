@@ -30,9 +30,19 @@ Changes apply to new sessions of each tool.
 
 The UI (dark only, crimson accent) uses Poppins and Lucide icons, both bundled into the binary: `arig` works fully offline.
 
+## Sync between machines
+
+Open **Sync** in the dashboard, paste the URL of an empty private repo you own (GitHub or any git host), and do the same on your other machines. arig then syncs every 15 minutes while it runs, or whenever you press **Sync now**.
+
+- **Syncs:** skills in every supported tool's skills folder (including switched-off ones), and plugins switched on or off for Claude Code and Codex.
+- **Never syncs:** MCP server configs (they hold API keys), `.env` files, `node_modules`, and files over 10 MB.
+- The repo mirrors your home folders (`home/.claude/skills/…`). Links stay links, so skills linked into `~/.agents/skills` keep working on every machine.
+- Joining never deletes anything: a machine's first sync only adds. After that, deleting or switching off a skill on one machine does the same on the others.
+- If two machines change the same thing, the machine that syncs later wins. Anything a sync replaces or removes on your machine is first copied to `agentrig/backup/<time>/` in your config folder (`~/Library/Application Support` on macOS).
+- Uses your existing git login (SSH key, GitHub CLI or keychain) and never asks for a password in the background.
+
 Planned:
 - MCP server toggles
-- Sync your setup across machines through a private GitHub repo
 - API keys kept in the OS keychain, never in the repo
 
 ## Run
@@ -84,6 +94,7 @@ cmd/arig/    the arig command
 server.go    server, token + host guard, embedded UI
 api.go       /api routes
 adapters/    one file per AI tool
+gitsync/     sync between machines through git
 web/         SvelteKit UI (built into the binary)
 ```
 
