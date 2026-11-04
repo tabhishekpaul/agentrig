@@ -41,16 +41,27 @@ Requires Go 1.27+ and Node 20+ to build.
 
 ```sh
 cd web && npm install && npm run build && cd ..
-go build -o arig ./cmd/arig
-./arig launch
+go install ./cmd/arig
+arig
 ```
 
-The dashboard opens at **http://arig.localhost:7377**: bookmark it or type it any time `arig` is running. Running `arig launch` again just reopens it. Use `-port` to pick another port.
+The first `arig` run sets up an always-on background server and opens the dashboard at **http://arig.localhost:7377**. From then on it starts at login and restarts if it ever stops, so the address works any time: bookmark it. No admin rights are needed:
+
+- macOS: a LaunchAgent (`~/Library/LaunchAgents/dev.agentrig.arig.plist`, log in `~/Library/Logs/arig.log`)
+- Linux: a systemd user unit (`~/.config/systemd/user/arig.service`)
+- Windows: a login entry in `HKCU\...\Run`
+
+Every `arig` run re-checks this, so after upgrading or moving the binary, run `arig` once and the background server switches to the new one.
+
+```sh
+arig              # open the dashboard
+arig uninstall    # stop the background server and remove it from login
+```
 
 ## Develop
 
 ```sh
-go run ./cmd/arig launch -no-open   # API on arig.localhost:7377
+go run ./cmd/arig serve             # API on arig.localhost:7377 (stop the background one first: arig uninstall)
 cd web && npm run dev               # open the Vite URL
 ```
 

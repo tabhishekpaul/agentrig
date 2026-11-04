@@ -28,19 +28,22 @@ const DefaultPort = 7377
 // this machine (browsers and the OS resolver), so no hosts-file edits.
 func URL(port int) string { return fmt.Sprintf("http://arig.localhost:%d", port) }
 
+// ErrRunning means another arig already serves the port.
+var ErrRunning = errors.New("arig is already running")
+
 // Launch serves the dashboard on loopback (IPv4 and IPv6) at port and, if
 // open is set, opens it in the browser. If arig is already serving that
-// port, it just opens the browser. Otherwise it blocks until the server stops.
+// port, it opens the browser (if asked) and returns ErrRunning. Otherwise it
+// blocks until the server stops.
 func Launch(port int, open bool) error {
 	url := URL(port)
 	p := strconv.Itoa(port)
 	ln4, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", p))
-	if errors.Is(err, syscall.EADDRINUSE) && isArig(port) {
-		fmt.Println("arig is already running at", url)
+	if errors.Is(err, syscall.EADDRINUSE) && Running(port) {
 		if open {
-			openBrowser(url)
+			OpenBrowser(url)
 		}
-		return nil
+		return ErrRunning
 	}
 	if err != nil {
 		return err
@@ -62,7 +65,7 @@ func Launch(port int, open bool) error {
 
 	fmt.Println("arig running at", url)
 	if open {
-		openBrowser(url)
+		OpenBrowser(url)
 	}
 	errc := make(chan error, len(lns))
 	for _, ln := range lns {
@@ -71,8 +74,8 @@ func Launch(port int, open bool) error {
 	return <-errc
 }
 
-// isArig reports whether the process already on port is arig.
-func isArig(port int) bool {
+// Running reports whether arig is serving on port.
+func Running(port int) bool {
 	req, _ := http.NewRequest("GET", fmt.Sprintf("http://127.0.0.1:%d/api/ping", port), nil)
 	req.Host = fmt.Sprintf("arig.localhost:%d", port)
 	req.Header.Set(apiHeader, "1")
@@ -131,7 +134,8 @@ func spa(ui fs.FS) http.Handler {
 	})
 }
 
-func openBrowser(url string) {
+// OpenBrowser opens url in the default browser.
+func OpenBrowser(url string) {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":

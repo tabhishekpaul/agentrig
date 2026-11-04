@@ -2,7 +2,7 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import adapter from '@sveltejs/adapter-static';
 import { defineConfig } from 'vite';
 
-// In dev, run `go run ./cmd/arig launch -no-open`, then `npm run dev`.
+// In dev, run `go run ./cmd/arig serve` (or use the always-on arig), then `npm run dev`.
 export default defineConfig({
 	plugins: [
 		// SPA mode: every route falls back to index.html; Go's spa() handler does the same.
