@@ -2,6 +2,7 @@
 	import { ArrowRight } from '@lucide/svelte';
 	import { store, count } from '../lib/tools.svelte.js';
 	const installed = $derived(store.tools.filter((t) => t.installed));
+	const missing = $derived(store.tools.filter((t) => !t.installed));
 	const sum = (kind) => store.tools.reduce((n, t) => n + count(t.items, kind), 0);
 </script>
 
@@ -25,24 +26,30 @@
 		<p class="muted">Scanning your tools…</p>
 	{:else}
 		<div class="grid">
-			{#each store.tools as t, n}
+			{#each installed as t, n}
 				<a class="card" href="/library?tool={t.id}">
 					<div class="top">
 						<span class="num">{String(n + 1).padStart(2, '0')}</span>
 						<strong>{t.name}</strong>
 						<span class="status"><span class="dot" class:ok={t.installed}></span>{t.installed ? 'Installed' : 'Not found'}</span>
 					</div>
-					{#if t.installed}
+					{#if t.items.length}
 						<div class="chips">
 							<code>{count(t.items, 'skill')} skills</code>
 							<code>{count(t.items, 'plugin')} plugins</code>
 							<code>{count(t.items, 'mcp')} mcp</code>
 						</div>
 						<span class="more">View items <ArrowRight size={13} /></span>
+					{:else}
+						<span class="empty">Nothing installed yet</span>
 					{/if}
 				</a>
 			{/each}
 		</div>
+		{#if missing.length}
+			<div class="label-mono heading">also supported</div>
+			<p class="missing">{missing.map((t) => t.name).join(' · ')}</p>
+		{/if}
 	{/if}
 </div>
 
@@ -74,6 +81,8 @@
 	.status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
 	.chips { display: flex; flex-wrap: wrap; gap: 6px; }
 	code { font-family: var(--mono); font-size: 11px; padding: 3px 7px; border: 1px solid var(--border); border-radius: var(--radius); color: var(--muted); }
+	.empty { font-size: 12px; color: var(--faint); }
+	.missing { margin: 0; font-size: 13px; line-height: 1.8; color: var(--muted); }
 	.more { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--foreground); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--faint); }
 	.card:hover .more { color: var(--brand); text-decoration-color: var(--brand); }
 </style>

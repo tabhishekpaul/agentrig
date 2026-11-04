@@ -29,7 +29,7 @@
 			{/each}
 
 			<div class="section label-mono">tools</div>
-			{#each store.tools as t}
+			{#each store.tools.filter((t) => t.installed) as t}
 				<a href="/library?tool={t.id}" class="row" class:active={toolParam === t.id}>
 					<span class="dot" class:ok={t.installed}></span>
 					<span class="label">{t.name}</span>

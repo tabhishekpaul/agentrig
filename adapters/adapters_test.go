@@ -19,7 +19,7 @@ func fakeClaude(t *testing.T) claudePaths {
 }
 
 func TestClaudeSkills(t *testing.T) {
-	got := claudeSkills(fakeClaude(t).skills(), true)
+	got := readSkills(fakeClaude(t).skills(), true)
 	if len(got) != 1 || got[0].ID != "good" || got[0].Name != "good-skill" || got[0].Description != "Does: things" {
 		t.Fatalf("got %+v", got)
 	}
@@ -36,13 +36,13 @@ func TestToggleSkillRoundTrip(t *testing.T) {
 		if err := claudeToggle(p, "skill", id, false); err != nil {
 			t.Fatal(err)
 		}
-		if d := claudeSkills(p.disabled(), false); !has(d, id) {
+		if d := readSkills(p.disabled(), false); !has(d, id) {
 			t.Fatalf("%s not disabled: %+v", id, d)
 		}
 		if err := claudeToggle(p, "skill", id, true); err != nil {
 			t.Fatal(err)
 		}
-		if e := claudeSkills(p.skills(), true); !has(e, id) {
+		if e := readSkills(p.skills(), true); !has(e, id) {
 			t.Fatalf("%s not re-enabled: %+v", id, e)
 		}
 	}

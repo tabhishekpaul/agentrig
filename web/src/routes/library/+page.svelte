@@ -69,8 +69,10 @@
 				<div class="name">
 					<span>{i.name}</span>
 					<code class="meta">{i.kind}</code>
+					{#if !tool}<span class="tool">{t.name}</span>{/if}
 				</div>
 				{#if i.description}<p>{i.description}</p>{/if}
+				{#if i.source}<p class="src">{i.source}</p>{/if}
 			</div>
 			{#if i.toggleable}
 				<button
@@ -113,6 +115,8 @@
 	.name { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 500; }
 	.meta { font-family: var(--mono); font-size: 10.5px; font-weight: 400; padding: 1px 6px; border: 1px solid var(--border); border-radius: var(--radius); color: var(--muted); }
 	p { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 1; line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+	.tool { font-size: 11px; font-weight: 400; color: var(--faint); }
+	.src { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
 	.empty { justify-content: center; padding: 48px; font-size: 13px; border: 0; }
 	.switch { flex: none; width: 36px; height: 20px; border: 0; padding: 2px; border-radius: 10px; background: #e2ded7; cursor: pointer; transition: background 0.15s; }
 	.switch span { display: block; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 15%); transition: transform 0.15s; }

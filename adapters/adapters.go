@@ -15,6 +15,7 @@ type Item struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	Path        string `json:"path,omitempty"`
+	Source      string `json:"source,omitempty"` // config file or folder it came from, as ~/… for display
 	Enabled     bool   `json:"enabled"`
 	Toggleable  bool   `json:"toggleable"`
 }
@@ -29,6 +30,11 @@ func Toggle(tool, kind, id string, enabled bool) error {
 	case "claude":
 		return claudeToggle(defaultClaudePaths(), kind, id, enabled)
 	}
+	for _, s := range specs {
+		if s.ID == tool {
+			return s.toggle(realEnv(), kind, id, enabled)
+		}
+	}
 	return fmt.Errorf("unknown tool %q", tool)
 }
 
@@ -41,7 +47,17 @@ type Tool struct {
 
 // Detect reports every supported tool, installed or not.
 func Detect() []Tool {
-	return []Tool{claude()}
+	e := realEnv()
+	tools := []Tool{claude()}
+	for _, s := range specs {
+		tools = append(tools, s.read(e))
+	}
+	return tools
+}
+
+func errNotFound(kind, id string) error { return fmt.Errorf("%s %q not found", kind, id) }
+func errNotToggleable(tool, kind string) error {
+	return fmt.Errorf("%s: %s items can't be toggled yet", tool, kind)
 }
 
 // frontmatter pulls name/description from a SKILL.md header.

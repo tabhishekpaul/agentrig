@@ -36,18 +36,28 @@ func claudeAt(p claudePaths) Tool {
 		return t
 	}
 	t.Installed = true
-	t.Items = append(t.Items, claudeSkills(p.skills(), true)...)
-	t.Items = append(t.Items, claudeSkills(p.disabled(), false)...)
-	sort.Slice(t.Items, func(i, j int) bool { return strings.ToLower(t.Items[i].Name) < strings.ToLower(t.Items[j].Name) })
-	t.Items = append(t.Items, claudePlugins(filepath.Join(p.Root, "plugins", "installed_plugins.json"), p.Settings)...)
-	t.Items = append(t.Items, claudeMCP(p.MCPFile)...)
+	t.Items = append(t.Items, withSource("~/.claude/skills", readSkills(p.skills(), true))...)
+	t.Items = append(t.Items, withSource("~/.claude/skills", readSkills(p.disabled(), false))...)
+	sortByName(t.Items)
+	t.Items = append(t.Items, withSource("~/.claude/settings.json", claudePlugins(filepath.Join(p.Root, "plugins", "installed_plugins.json"), p.Settings))...)
+	t.Items = append(t.Items, withSource("~/.claude.json", claudeMCP(p.MCPFile))...)
 	return t
 }
 
-func claudeSkills(dir string, enabled bool) []Item {
+func withSource(src string, items []Item) []Item {
+	for i := range items {
+		items[i].Source = src
+	}
+	return items
+}
+
+func readSkills(dir string, enabled bool) []Item {
 	entries, _ := os.ReadDir(dir)
 	var items []Item
 	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".") {
+			continue // .DS_Store, Codex's bundled .system skills
+		}
 		md := filepath.Join(dir, e.Name(), "SKILL.md")
 		if _, err := os.Stat(md); err != nil {
 			continue // not a skill (e.g. .DS_Store, stray dirs)
@@ -113,19 +123,21 @@ func claudeMCP(path string) []Item {
 func claudeToggle(p claudePaths, kind, id string, enabled bool) error {
 	switch kind {
 	case "skill":
-		return toggleSkill(p, id, enabled)
+		return toggleSkillIn(p.skills(), p.disabled(), id, enabled)
 	case "plugin":
 		return togglePlugin(p.Settings, id, enabled)
 	}
-	return fmt.Errorf("claude: %s items can't be toggled yet", kind)
+	return errNotToggleable("Claude Code", kind)
 }
 
-func toggleSkill(p claudePaths, id string, enabled bool) error {
+// toggleSkillIn moves a skill between dir and its sibling disabled dir.
+// Siblings sit at the same depth, so relative symlinks (../../.agents/…) still resolve.
+func toggleSkillIn(dir, disabledDir, id string, enabled bool) error {
 	// id comes from the browser: it must be a plain directory name, never a path.
 	if id == "" || id != filepath.Base(id) || strings.HasPrefix(id, ".") {
 		return fmt.Errorf("invalid skill id %q", id)
 	}
-	from, to := filepath.Join(p.disabled(), id), filepath.Join(p.skills(), id)
+	from, to := filepath.Join(disabledDir, id), filepath.Join(dir, id)
 	if !enabled {
 		from, to = to, from
 	}
@@ -133,7 +145,7 @@ func toggleSkill(p claudePaths, id string, enabled bool) error {
 		if _, err := os.Lstat(to); err == nil {
 			return nil // already in the requested state
 		}
-		return fmt.Errorf("skill %q not found", id)
+		return errNotFound("skill", id)
 	}
 	if _, err := os.Lstat(to); err == nil {
 		return fmt.Errorf("skill %q exists in both enabled and disabled folders; resolve by hand", id)
