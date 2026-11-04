@@ -69,7 +69,7 @@ func window(url string) error {
 	})
 	_ = w.Bind("arigClose", func() { postMessage.Call(hwnd, wmClose, 0, 0) })
 	// Hand the press to Windows as a title-bar press: it moves the window.
-	_ = w.Bind("arigDragStart", func() {
+	_ = w.Bind("arigDragStart", func(x, y float64) { // Windows uses the live press, not x, y
 		releaseCapture.Call()
 		sendMessage.Call(hwnd, wmNCLButtonDn, htCaption, 0)
 	})

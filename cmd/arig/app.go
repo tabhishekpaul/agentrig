@@ -33,7 +33,7 @@ const setDrag = (on) => { if (on !== arigDrag) { arigDrag = on; window.arigDragA
 document.addEventListener('mousemove', (e) => setDrag(dragArea(e.target)), true);
 document.addEventListener('mouseleave', () => setDrag(false));`
 
-// customChrome is the frameless window on Windows: the page shows its own
+// customChrome is the frameless window on Windows and Linux: the page shows its own
 // macOS-style buttons (class app-custom) and empty header space drags the
 // window, double-click maximizes.
 const customChrome = `
@@ -42,7 +42,7 @@ document.addEventListener('mousedown', (e) => {
 	const t = e.target;
 	if (e.button !== 0 || !t.closest || t.closest('button, a, input, select, textarea, label, [role=switch], [contenteditable]')) return;
 	if (!t.closest('header, [data-drag]')) return;
-	if (e.detail === 2) window.arigMaximize(); else window.arigDragStart();
+	if (e.detail === 2) window.arigMaximize(); else window.arigDragStart(e.screenX, e.screenY);
 }, true);
 window.addEventListener('focus', () => document.documentElement.classList.remove('app-blurred'));
 window.addEventListener('blur', () => document.documentElement.classList.add('app-blurred'));`
