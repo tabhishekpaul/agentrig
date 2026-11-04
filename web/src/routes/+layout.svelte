@@ -1,7 +1,7 @@
 <script>
 	import '../app.css';
 	import { page } from '$app/state';
-	import { Bot, House, Library, FolderGit2, RefreshCw, Gauge, PenLine, Store } from '@lucide/svelte';
+	import { Bot, House, Library, FolderGit2, RefreshCw, Gauge, PenLine, Store, Eraser } from '@lucide/svelte';
 	import Logo from '../lib/Logo.svelte';
 	import ToolIcon from '../lib/ToolIcon.svelte';
 	import { store, load } from '../lib/tools.svelte.js';
@@ -15,6 +15,7 @@
 		{ href: '/market', label: 'Marketplace', icon: Store },
 		{ href: '/projects', label: 'Projects', icon: FolderGit2 },
 		{ href: '/insights', label: 'Insights', icon: Gauge },
+		{ href: '/cleanup', label: 'Cleanup', icon: Eraser },
 		{ href: '/studio', label: 'Studio', icon: PenLine },
 		{ href: '/mcp', label: 'AI access', icon: Bot },
 		{ href: '/sync', label: 'Sync', icon: RefreshCw }

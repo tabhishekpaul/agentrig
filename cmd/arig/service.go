@@ -128,7 +128,16 @@ func ensureService() error {
 		}
 		if changed || !running || stale {
 			_ = run("launchctl", "bootout", launchdTarget()+"/"+label) // drop a stale registration
-			if err := run("launchctl", "bootstrap", launchdTarget(), plistPath()); err != nil {
+			// bootout returns before the old job is gone; bootstrapping too soon
+			// fails with "Bootstrap failed: 5", so retry for a few seconds.
+			var err error
+			for range 20 {
+				if err = run("launchctl", "bootstrap", launchdTarget(), plistPath()); err == nil {
+					break
+				}
+				time.Sleep(250 * time.Millisecond)
+			}
+			if err != nil {
 				return err
 			}
 		}
