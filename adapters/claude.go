@@ -38,7 +38,7 @@ func claudeAt(p claudePaths) Tool {
 	t.Installed = true
 	t.Items = append(t.Items, claudeSkills(p.skills(), true)...)
 	t.Items = append(t.Items, claudeSkills(p.disabled(), false)...)
-	sort.Slice(t.Items, func(i, j int) bool { return t.Items[i].Name < t.Items[j].Name })
+	sort.Slice(t.Items, func(i, j int) bool { return strings.ToLower(t.Items[i].Name) < strings.ToLower(t.Items[j].Name) })
 	t.Items = append(t.Items, claudePlugins(filepath.Join(p.Root, "plugins", "installed_plugins.json"), p.Settings)...)
 	t.Items = append(t.Items, claudeMCP(p.MCPFile)...)
 	return t

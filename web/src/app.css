@@ -1,0 +1,38 @@
+@import '@fontsource/poppins/400.css';
+@import '@fontsource/poppins/500.css';
+@import '@fontsource/poppins/600.css';
+
+/* Design language shared with editrig: dark monochrome, flush square frames,
+   rounded components, hairline borders, status as a coloured dot. */
+:root {
+	color-scheme: dark;
+	--background: #0e0e10; /* the work: content frame */
+	--chrome: #151518; /* sidebar */
+	--card: #1c1c21; /* raised components */
+	--hover: #26262b;
+	--foreground: #ededef;
+	--muted: #a1a1aa;
+	--faint: #6b6b74;
+	--border: rgb(255 255 255 / 8%);
+	--input: rgb(255 255 255 / 12%);
+	--accent: color-mix(in oklch, var(--foreground) 8%, transparent);
+	--selected: color-mix(in oklch, var(--foreground) 14%, transparent);
+	--ring: #8b8b94;
+	--ok: #34d399;
+	--off: #52525b;
+	--danger: #f87171;
+	--radius: 0.75rem;
+	font-family: 'Poppins', system-ui, sans-serif;
+	font-size: 14px;
+	-webkit-font-smoothing: antialiased;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; background: var(--background); color: var(--foreground); }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+.dot { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--off); }
+.dot.ok { background: var(--ok); }
+.muted { color: var(--muted); }
+.tabular { font-variant-numeric: tabular-nums; }

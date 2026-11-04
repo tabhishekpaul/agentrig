@@ -10,6 +10,8 @@ Early. Today it works with Claude Code:
 - Lists your skills, plugins and MCP servers
 - Turns skills and plugins on and off from the Library page
 
+The UI uses Poppins and Lucide icons, both bundled into the binary: `arig` works fully offline.
+
 How toggles work:
 - **Skills**: a disabled skill is moved to `~/.claude/skills-disabled/` and moved back when enabled. Nothing is deleted.
 - **Plugins**: flips the plugin's entry in `enabledPlugins` in `~/.claude/settings.json`. Other settings are kept; top-level keys end up in alphabetical order.
