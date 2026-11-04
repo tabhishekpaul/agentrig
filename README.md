@@ -2,7 +2,7 @@
 
 One dashboard for the skills, plugins and MCP servers across your AI coding tools.
 
-agentrig ships as a single binary, `arig`. Run `arig launch and your browser opens a local dashboard showing everything installed in your AI tools — no terminal commands to learn.
+agentrig ships as a single binary, `arig`. Run `arig launch` and your browser opens a local dashboard showing everything installed in your AI tools — no terminal commands to learn.
 
 ## Status
 
