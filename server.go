@@ -21,8 +21,8 @@ import (
 //go:embed all:web/build
 var webBuild embed.FS
 
-// DefaultPort spells "arig" on a phone keypad.
-const DefaultPort = 2744
+// DefaultPort is where the dashboard lives: http://arig.localhost:7377.
+const DefaultPort = 7377
 
 // URL is the dashboard address for a port. *.localhost always resolves to
 // this machine (browsers and the OS resolver), so no hosts-file edits.
@@ -33,7 +33,8 @@ func URL(port int) string { return fmt.Sprintf("http://arig.localhost:%d", port)
 // port, it just opens the browser. Otherwise it blocks until the server stops.
 func Launch(port int, open bool) error {
 	url := URL(port)
-	ln4, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	p := strconv.Itoa(port)
+	ln4, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", p))
 	if errors.Is(err, syscall.EADDRINUSE) && isArig(port) {
 		fmt.Println("arig is already running at", url)
 		if open {
@@ -46,7 +47,7 @@ func Launch(port int, open bool) error {
 	}
 	lns := []net.Listener{ln4}
 	// Browsers may try ::1 first for arig.localhost; skip quietly if IPv6 is off.
-	if ln6, err := net.Listen("tcp", net.JoinHostPort("::1", strconv.Itoa(port))); err == nil {
+	if ln6, err := net.Listen("tcp", net.JoinHostPort("::1", p)); err == nil {
 		lns = append(lns, ln6)
 	}
 

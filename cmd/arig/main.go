@@ -12,7 +12,7 @@ import (
 const usage = `arig: manage the skills, plugins and MCP servers across your AI coding tools
 
 Usage:
-  arig launch [flags]   open the dashboard at http://arig.localhost:2744
+  arig launch [flags]   open the dashboard at http://arig.localhost:7377
 
 Run "arig launch -h" for flags.
 `

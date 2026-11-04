@@ -10,7 +10,7 @@ export default defineConfig({
 	],
 	server: {
 		proxy: {
-			'/api': { target: 'http://127.0.0.1:2744', headers: { host: 'arig.localhost:2744', origin: 'http://arig.localhost:2744' } }
+			'/api': { target: 'http://127.0.0.1:7377', headers: { host: 'arig.localhost:7377', origin: 'http://arig.localhost:7377' } }
 		}
 	}
 });

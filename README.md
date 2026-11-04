@@ -45,12 +45,12 @@ go build -o arig ./cmd/arig
 ./arig launch
 ```
 
-The dashboard opens at **http://arig.localhost:2744**: bookmark it or type it any time `arig` is running (2744 spells "arig" on a phone keypad). Running `arig launch` again just reopens it. Use `-port` to pick another port.
+The dashboard opens at **http://arig.localhost:7377**: bookmark it or type it any time `arig` is running. Running `arig launch` again just reopens it. Use `-port` to pick another port.
 
 ## Develop
 
 ```sh
-go run ./cmd/arig launch -no-open   # API on arig.localhost:2744
+go run ./cmd/arig launch -no-open   # API on arig.localhost:7377
 cd web && npm run dev               # open the Vite URL
 ```
 
