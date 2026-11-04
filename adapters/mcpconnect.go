@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/tabhishekpaul/agentrig/internal/proc"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -173,7 +174,7 @@ func claudeCLI(bin, cmd string, on bool) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if out, err := exec.CommandContext(ctx, bin, args...).CombinedOutput(); err != nil {
+	if out, err := proc.CommandContext(ctx, bin, args...).CombinedOutput(); err != nil {
 		return fmt.Errorf("claude %s: %s", args[1], strings.TrimSpace(string(out)))
 	}
 	return nil

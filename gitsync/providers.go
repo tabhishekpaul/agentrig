@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/tabhishekpaul/agentrig/internal/proc"
 	"net/url"
 	"os/exec"
 	"slices"
@@ -233,7 +234,7 @@ func (s *Syncer) Setup(providerID string, create bool) (Config, error) {
 func cli(name string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := proc.CommandContext(ctx, name, args...)
 	cmd.Env = append(cmd.Environ(), "GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1", "NO_COLOR=1")
 	out, err := cmd.CombinedOutput()
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/tabhishekpaul/agentrig/internal/proc"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -102,7 +103,7 @@ func New(m *market.Market, skillTools func() []string, pluginInstalled func(tool
 func run(argv []string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, argv[0], argv[1:]...).CombinedOutput() // stdin is /dev/null: a prompt can't hang it
+	out, err := proc.CommandContext(ctx, argv[0], argv[1:]...).CombinedOutput() // stdin is /dev/null: a prompt can't hang it
 	return string(out), err
 }
 

@@ -1,4 +1,4 @@
-# agentrig installer for Windows:
+# Agentrig installer for Windows:
 #   irm https://tabhishekpaul.github.io/agentrig/install.ps1 | iex
 # Installs arig to %LOCALAPPDATA%\arig\bin, adds it to your PATH and starts the dashboard.
 $ErrorActionPreference = 'Stop'

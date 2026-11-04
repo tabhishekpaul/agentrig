@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/tabhishekpaul/agentrig/internal/proc"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,7 +18,7 @@ func chromeApp(url string) error {
 				continue
 			}
 		}
-		return exec.Command(b, "--app="+url, "--new-window").Start()
+		return proc.Command(b, "--app="+url, "--new-window").Start()
 	}
 	return errNoWindow
 }

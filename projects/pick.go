@@ -3,6 +3,7 @@ package projects
 import (
 	"context"
 	"errors"
+	"github.com/tabhishekpaul/agentrig/internal/proc"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -23,17 +24,17 @@ func PickFolder() (string, error) {
 	case "darwin":
 		// The dialog floats in front of every app on its own. Don't add
 		// "tell me to activate": it costs ~2s before the dialog appears.
-		cmd = exec.CommandContext(ctx, "osascript",
+		cmd = proc.CommandContext(ctx, "osascript",
 			"-e", `POSIX path of (choose folder with prompt "Choose a project folder" default location (path to home folder))`)
 	case "windows":
-		cmd = exec.CommandContext(ctx, "powershell", "-NoProfile", "-STA", "-Command",
+		cmd = proc.CommandContext(ctx, "powershell", "-NoProfile", "-STA", "-Command",
 			`Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; `+
 				`$d.Description = 'Choose a project folder'; if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath }`)
 	default:
 		if p, err := exec.LookPath("zenity"); err == nil {
-			cmd = exec.CommandContext(ctx, p, "--file-selection", "--directory", "--title=Choose a project folder")
+			cmd = proc.CommandContext(ctx, p, "--file-selection", "--directory", "--title=Choose a project folder")
 		} else if p, err := exec.LookPath("kdialog"); err == nil {
-			cmd = exec.CommandContext(ctx, p, "--getexistingdirectory", "~", "--title", "Choose a project folder")
+			cmd = proc.CommandContext(ctx, p, "--getexistingdirectory", "~", "--title", "Choose a project folder")
 		} else {
 			return "", ErrNoPicker
 		}

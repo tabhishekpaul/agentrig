@@ -3,9 +3,9 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/tabhishekpaul/agentrig/internal/proc"
 	"html"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -92,7 +92,7 @@ func servicePath() string {
 }
 
 func run(name string, args ...string) error {
-	out, err := exec.Command(name, args...).CombinedOutput()
+	out, err := proc.Command(name, args...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s %s: %v: %s", name, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}

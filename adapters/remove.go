@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/tabhishekpaul/agentrig/internal/proc"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -74,7 +75,7 @@ func uninstallClaudePlugin(bin, id string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	if out, err := exec.CommandContext(ctx, path, "plugin", "uninstall", id).CombinedOutput(); err != nil {
+	if out, err := proc.CommandContext(ctx, path, "plugin", "uninstall", id).CombinedOutput(); err != nil {
 		return fmt.Errorf("claude plugin uninstall: %s", strings.TrimSpace(string(out)))
 	}
 	return nil

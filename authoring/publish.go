@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/tabhishekpaul/agentrig/internal/proc"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -132,7 +132,7 @@ func GitUser() string {
 func run(dir string, timeout time.Duration, name string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := proc.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	cmd.Env = append(cmd.Environ(), "GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1", "NO_COLOR=1")
 	out, err := cmd.CombinedOutput()

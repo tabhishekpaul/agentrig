@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/tabhishekpaul/agentrig/internal/proc"
 	"io/fs"
 	"log"
 	"net"
@@ -227,11 +228,11 @@ func OpenBrowser(url string) {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("open", url)
+		cmd = proc.Command("open", url)
 	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+		cmd = proc.Command("rundll32", "url.dll,FileProtocolHandler", url)
 	default:
-		cmd = exec.Command("xdg-open", url)
+		cmd = proc.Command("xdg-open", url)
 	}
 	_ = cmd.Start()
 }

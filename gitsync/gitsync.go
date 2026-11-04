@@ -14,10 +14,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/tabhishekpaul/agentrig/internal/proc"
 	"log"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -343,7 +343,7 @@ func writeJSON(path string, v any) error {
 func git(dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := proc.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"GIT_TERMINAL_PROMPT=0",

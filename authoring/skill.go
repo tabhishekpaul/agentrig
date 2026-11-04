@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/tabhishekpaul/agentrig/internal/proc"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -188,7 +189,7 @@ func Draft(name, description string) (string, error) {
 		if d.name != cli {
 			continue
 		}
-		cmd := exec.CommandContext(ctx, cli, d.args(prompt)...)
+		cmd := proc.CommandContext(ctx, cli, d.args(prompt)...)
 		cmd.Dir = os.TempDir() // no project context leaks into the draft
 		out, err := cmd.Output()
 		if ctx.Err() != nil {

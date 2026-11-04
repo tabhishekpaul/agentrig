@@ -3,8 +3,8 @@ package main
 import (
 	_ "embed"
 	le "encoding/binary"
+	"github.com/tabhishekpaul/agentrig/internal/proc"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -68,7 +68,7 @@ func windowsShortcut(exe string) error {
 	// Windows' own shortcut API. Paths go in through the environment, never
 	// spliced into the script. WindowStyle 7 = minimized, so the console arig
 	// starts with doesn't flash up before the window.
-	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command",
+	cmd := proc.Command("powershell", "-NoProfile", "-NonInteractive", "-Command",
 		`$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:ARIG_LNK); `+
 			`$s.TargetPath = $env:ARIG_EXE; $s.Arguments = 'app'; $s.IconLocation = $env:ARIG_ICO; `+
 			`$s.WorkingDirectory = $env:USERPROFILE; $s.WindowStyle = 7; $s.Description = 'Agentrig'; $s.Save()`)

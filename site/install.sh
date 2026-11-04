@@ -1,5 +1,5 @@
 #!/bin/sh
-# agentrig installer for macOS and Linux:
+# Agentrig installer for macOS and Linux:
 #   curl -fsSL https://tabhishekpaul.github.io/agentrig/install.sh | sh
 # Installs arig to ~/.arig/bin (override with ARIG_INSTALL=/some/dir), adds it
 # to PATH and starts the always-on dashboard. Set ARIG_NO_START=1 to skip that.
@@ -69,7 +69,7 @@ case ":$PATH:" in
       *) rc="$HOME/.profile" ;;
     esac
     if ! grep -qsF "$DIR" "$rc"; then
-      printf '\n# agentrig\n%s\n' "$line" >> "$rc"
+      printf '\n# Agentrig\n%s\n' "$line" >> "$rc"
       printf 'Added %s to PATH in %s\n' "$DIR" "$rc"
     fi
     ;;
