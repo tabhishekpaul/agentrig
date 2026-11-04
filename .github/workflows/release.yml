@@ -14,16 +14,13 @@ permissions:
 
 jobs:
   build:
-    # The app window needs cgo where it's native: macOS links the system
-    # WebKit, Windows x64 links WebView2 (MinGW on the Windows runner). Linux
-    # and Windows arm64 are pure Go and cross-compile on the Mac runner.
+    # The app window needs cgo only on macOS (system WebKit); Linux and Windows
+    # (WebView2 via pure Go) cross-compile on the Mac runner.
     strategy:
       matrix:
         include:
           - runner: macos-latest
-            targets: darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/arm64
-          - runner: windows-latest
-            targets: windows/amd64
+            targets: darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64 windows/arm64
     runs-on: ${{ matrix.runner }}
     defaults:
       run:
@@ -58,8 +55,6 @@ jobs:
             cgo=0; cc=""
             if [ "$os" = darwin ]; then
               cgo=1; cc="clang -arch $([ "$arch" = amd64 ] && echo x86_64 || echo arm64)"
-            elif [ "$os/$arch" = windows/amd64 ]; then
-              cgo=1; cc=gcc
             fi
             mkdir -p "build/$name"
             CGO_ENABLED=$cgo CC="$cc" GOOS=$os GOARCH=$arch go build -trimpath \
