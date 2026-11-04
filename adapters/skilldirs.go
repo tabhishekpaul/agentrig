@@ -12,3 +12,12 @@ func SkillDirs() map[string][]string {
 	}
 	return out
 }
+
+// SkillDir is the main global folder a tool loads skills from, or "" if the
+// tool has none.
+func SkillDir(tool string) string {
+	if d := SkillDirs()[tool]; len(d) > 0 {
+		return d[0]
+	}
+	return ""
+}
