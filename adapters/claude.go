@@ -62,7 +62,8 @@ func readSkills(dir string, enabled bool) []Item {
 		if _, err := os.Stat(md); err != nil {
 			continue // not a skill (e.g. .DS_Store, stray dirs)
 		}
-		name, desc := frontmatter(md)
+		fm := Frontmatter(md)
+		name, desc := fm["name"], fm["description"]
 		if name == "" {
 			name = e.Name()
 		}

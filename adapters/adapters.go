@@ -60,34 +60,30 @@ func errNotToggleable(tool, kind string) error {
 	return fmt.Errorf("%s: %s items can't be toggled yet", tool, kind)
 }
 
-// frontmatter pulls name/description from a SKILL.md header.
+// Frontmatter returns the single-line key: value pairs of a SKILL.md header
+// (name, description, category, tags, …).
 // ponytail: single-line values only; swap in a YAML parser if folded (>) descriptions show up.
-func frontmatter(path string) (name, desc string) {
+func Frontmatter(path string) map[string]string {
+	out := map[string]string{}
 	f, err := os.Open(path)
 	if err != nil {
-		return
+		return out
 	}
 	defer f.Close()
 	s := bufio.NewScanner(f)
 	if !s.Scan() || strings.TrimSpace(s.Text()) != "---" {
-		return
+		return out
 	}
 	for s.Scan() {
 		line := s.Text()
 		if strings.TrimSpace(line) == "---" {
 			break
 		}
-		if k, v, ok := strings.Cut(line, ":"); ok {
-			v = strings.Trim(strings.TrimSpace(v), `"'`)
-			switch k {
-			case "name":
-				name = v
-			case "description":
-				desc = v
-			}
+		if k, v, ok := strings.Cut(line, ":"); ok && !strings.HasPrefix(k, " ") {
+			out[strings.TrimSpace(k)] = strings.Trim(strings.TrimSpace(v), `"'`)
 		}
 	}
-	return
+	return out
 }
 
 // PluginStates returns tool -> plugin id -> enabled for every plugin that can
