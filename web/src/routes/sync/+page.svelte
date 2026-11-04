@@ -1,14 +1,29 @@
 <script>
-	import { RefreshCw, Unplug, Check, X } from '@lucide/svelte';
+	import { RefreshCw, Unplug, Check, X, ExternalLink, ChevronRight } from '@lucide/svelte';
 	import { api } from '../../lib/api.js';
 	import { load } from '../../lib/tools.svelte.js';
+	import ToolIcon from '../../lib/ToolIcon.svelte';
 
 	let status = $state(null);
 	let repo = $state('');
 	let busy = $state('');
 	let error = $state('');
 
+	let providers = $state(null); // null = checking
+	let confirming = $state(''); // provider id awaiting "create repo?" confirmation
+	let showUrl = $state(false);
+
 	api('sync').then((s) => (status = s)).catch((e) => (error = e.message));
+
+	async function checkProviders() {
+		providers = null;
+		providers = await api('sync/providers').catch((e) => {
+			error = e.message;
+			return [];
+		});
+	}
+	checkProviders();
+	const usable = $derived((providers ?? []).filter((p) => p.loggedIn));
 
 	async function act(label, path, body) {
 		busy = label;
@@ -65,16 +80,68 @@
 			</div>
 		</div>
 
-		<ol class="steps">
-			<li><span class="num">01</span> Create an <b>empty private</b> repo on GitHub (or any git host).</li>
-			<li><span class="num">02</span> Paste its URL here. arig uses your existing git login (SSH key or GitHub CLI).</li>
-			<li><span class="num">03</span> Do the same on your other machines with the same URL.</li>
-		</ol>
+		<div class="label-mono heading">your git accounts</div>
+		{#if providers === null}
+			<p class="muted small">Checking which git accounts this computer is signed in to…</p>
+		{:else}
+			<div class="accounts">
+				{#each providers as p}
+					<div class="account" class:off={!p.loggedIn}>
+						<ToolIcon id={p.id} size={22} />
+						<div class="who">
+							<strong>{p.name}</strong>
+							{#if !p.installed}
+								<span>Not set up on this computer · <a href={p.install} target="_blank" rel="noreferrer">get the {p.name} CLI <ExternalLink size={11} /></a></span>
+							{:else if !p.loggedIn}
+								<span>Installed, not signed in. Run <code>{p.cli} auth login</code> in a terminal, then check again.</span>
+							{:else if p.error}
+								<span class="bad">Signed in as {p.user}, but couldn't look for the repo: {p.error}</span>
+							{:else if p.repo}
+								<span>Signed in as <b>{p.user}</b> · found <code>{p.repo.name}</code></span>
+							{:else}
+								<span>Signed in as <b>{p.user}</b> · no <code>arig-sync</code> repo yet</span>
+							{/if}
+						</div>
+						{#if p.loggedIn && !p.error}
+							{#if p.repo}
+								<button class="primary" disabled={!!busy} onclick={() => act('setup', 'sync/setup', { provider: p.id })}>
+									{busy === 'setup' ? 'Connecting…' : 'Use this repo'}
+								</button>
+							{:else if confirming !== p.id}
+								<button class="ghost" disabled={!!busy} onclick={() => (confirming = p.id)}>Create repo…</button>
+							{/if}
+						{:else if p.installed && !p.loggedIn}
+							<button class="ghost" onclick={checkProviders}>Check again</button>
+						{/if}
+					</div>
+					{#if confirming === p.id}
+						<div class="confirm">
+							<p>Create a <b>private</b> repo <code>{p.user}/arig-sync</code> on {p.name} and sync this computer to it? Only you can see it.</p>
+							<div class="row">
+								<button class="primary" disabled={!!busy} onclick={() => act('setup', 'sync/setup', { provider: p.id, create: true })}>
+									{busy === 'setup' ? 'Creating…' : 'Create & connect'}
+								</button>
+								<button class="ghost" disabled={!!busy} onclick={() => (confirming = '')}>Cancel</button>
+							</div>
+						</div>
+					{/if}
+				{/each}
+			</div>
+			{#if !usable.length}
+				<p class="muted small">No signed-in git account found. Sign in with one of the CLIs above, or use any git repo URL below.</p>
+			{/if}
+		{/if}
 
-		<form onsubmit={(e) => (e.preventDefault(), act('connect', 'sync/connect', { repo }))}>
-			<input placeholder="git@github.com:you/ai-setup.git" bind:value={repo} spellcheck="false" autocomplete="off" />
-			<button class="primary" disabled={!repo.trim() || busy}>{busy === 'connect' ? 'Connecting…' : 'Connect'}</button>
-		</form>
+		<button class="disclosure" onclick={() => (showUrl = !showUrl)} aria-expanded={showUrl}>
+			<span class:open={showUrl}><ChevronRight size={14} /></span> Use another git host or repo URL
+		</button>
+		{#if showUrl}
+			<p class="muted small">Create an <b>empty private</b> repo anywhere and paste its URL. arig uses your existing git login (SSH key or credential helper).</p>
+			<form onsubmit={(e) => (e.preventDefault(), act('connect', 'sync/connect', { repo }))}>
+				<input placeholder="git@github.com:you/ai-setup.git" bind:value={repo} spellcheck="false" autocomplete="off" />
+				<button class="primary" disabled={!repo.trim() || busy}>{busy === 'connect' ? 'Connecting…' : 'Connect'}</button>
+			</form>
+		{/if}
 		<p class="hint">Joining never deletes anything: the first sync only adds this machine's skills to the repo.</p>
 	{:else}
 		<div class="grid">
@@ -116,9 +183,28 @@
 	.box li { display: flex; align-items: center; gap: 8px; color: var(--muted); }
 	.box :global(svg) { flex: none; color: var(--brand-text); }
 	code { font-family: var(--mono); font-size: 12px; }
+	.heading { margin: 28px 0 10px; }
+	.small { font-size: 13px; margin: 8px 0; }
+	.accounts { border-top: 1px solid var(--border); border-left: 1px solid var(--border); }
+	.account { display: flex; align-items: center; gap: 14px; padding: 14px 16px; background: var(--card); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+	.account.off :global(.ti) { opacity: 0.5; }
+	.who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+	.who strong { font-weight: 500; font-size: 14px; }
+	.who span { font-size: 12.5px; color: var(--muted); }
+	.who b { color: var(--foreground); font-weight: 500; }
+	.who a { color: var(--brand-text); text-decoration: none; display: inline-flex; align-items: center; gap: 3px; }
+	.who a:hover { text-decoration: underline; }
+	.bad { color: var(--brand-text) !important; }
+	.confirm { padding: 14px 16px; background: var(--brand-tint); border: 1px solid var(--brand-line); border-top: 0; }
+	.confirm p { margin: 0 0 12px; font-size: 13.5px; line-height: 1.5; }
+	.confirm .row { display: flex; gap: 8px; }
+	.disclosure { margin-top: 20px; padding: 0; height: auto; background: none; border: 0; color: var(--muted); font-size: 13px; font-weight: 400; }
+	.disclosure:hover { color: var(--foreground); }
+	.disclosure span { display: inline-flex; transition: transform 0.15s; }
+	.disclosure span.open { transform: rotate(90deg); }
 	.steps { list-style: none; margin: 24px 0 16px; padding: 0; display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; }
 	.steps .num { font-family: var(--mono); font-size: 12px; color: var(--brand-text); margin-right: 8px; }
-	form { display: flex; gap: 8px; }
+	form { display: flex; gap: 8px; margin-top: 8px; }
 	input { flex: 1; min-width: 0; height: 40px; padding: 0 12px; border-radius: var(--radius); border: 1px solid var(--input); background: var(--hover); font-family: var(--mono); font-size: 13px; outline: none; }
 	input:focus { border-color: var(--brand-line); }
 	button { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: var(--radius); font-size: 14px; font-weight: 500; cursor: pointer; border: 1px solid transparent; }

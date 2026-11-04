@@ -34,7 +34,7 @@ The UI (dark only, crimson accent) uses Poppins, Lucide icons and each tool's br
 
 ## Sync between machines
 
-Open **Sync** in the dashboard, paste the URL of an empty private repo you own (GitHub or any git host), and do the same on your other machines. arig then syncs every 15 minutes while it runs, or whenever you press **Sync now**.
+Open **Sync** in the dashboard. arig checks which git accounts this computer is signed in to through the GitHub CLI (`gh`) or GitLab CLI (`glab`) and looks for a repo called `arig-sync`. If it exists, pick **Use this repo**; if not, arig offers to create it as a private repo, and only does so after you confirm. Any other git host works too: create an empty private repo and paste its URL. Do the same on your other machines. arig then syncs every 15 minutes while it runs, or whenever you press **Sync now**.
 
 - **Syncs:** skills in every supported tool's skills folder (including switched-off ones), and plugins switched on or off for Claude Code and Codex.
 - **Never syncs:** MCP server configs (they hold API keys), `.env` files, `node_modules`, and files over 10 MB.
