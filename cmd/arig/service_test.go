@@ -51,3 +51,25 @@ func TestDesktopEntryQuotes(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+
+func TestLogoKeepsThreeBands(t *testing.T) {
+	g := iconPixels(logoPx)
+	bands, inBand := 0, false
+	for _, row := range g {
+		c := row[logoPx/2] // the pyramid's centre column
+		creamy := c.on && c.g > 200
+		if creamy && !inBand {
+			bands++
+		}
+		inBand = creamy
+	}
+	if bands != 3 {
+		t.Fatalf("the pyramid should show 3 bands, got %d", bands)
+	}
+	if g[0][0].on || g[logoPx-1][logoPx-1].on {
+		t.Fatal("corners should be transparent (rounded square)")
+	}
+	if len(logoRows()) != logoPx/2 {
+		t.Fatal("two pixels per row")
+	}
+}
