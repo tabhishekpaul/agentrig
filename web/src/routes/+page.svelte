@@ -2,6 +2,10 @@
 	import { ArrowRight } from '@lucide/svelte';
 	import { store, count } from '../lib/tools.svelte.js';
 	import ToolIcon from '../lib/ToolIcon.svelte';
+	import { api } from '../lib/api.js';
+	let ins = $state(null);
+	api('insights').then((r) => (ins = r)).catch(() => {});
+	const unusedCount = $derived((ins?.tools ?? []).reduce((n, t) => n + (t.unused?.length ?? 0), 0));
 	const installed = $derived(store.tools.filter((t) => t.installed));
 	const missing = $derived(store.tools.filter((t) => !t.installed));
 	const sum = (kind) => store.tools.reduce((n, t) => n + count(t.items, kind), 0);
@@ -19,6 +23,15 @@
 		</div>
 		<a href="/library" class="cta">Open library <ArrowRight size={15} /></a>
 	</section>
+
+	{#if ins?.enabled}
+		<a class="insight" href="/insights">
+			<span class="label-mono">context cost</span>
+			<span class="line"><b class="tabular">{ins.enabled}</b> enabled skills ≈ <b class="tabular">{ins.tokens.toLocaleString()}</b> tokens per message</span>
+			{#if unusedCount}<span class="muted">{unusedCount} not used in 30 days</span>{/if}
+			<span class="more">Open insights <ArrowRight size={13} /></span>
+		</a>
+	{/if}
 
 	<div class="label-mono heading">tools on this machine</div>
 	{#if store.error}
@@ -76,6 +89,12 @@
 	.cta:hover { background: #fff; }
 	.heading { margin: 32px 0 12px; }
 	.err { color: var(--danger); }
+	.insight { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin-top: 24px; padding: 18px 20px; background: var(--card); border: 1px solid var(--border); color: inherit; text-decoration: none; font-size: 14px; transition: background 0.12s; }
+	.insight:hover { background: var(--hover); }
+	.insight .line b { font-weight: 500; font-size: 18px; color: var(--brand-text); }
+	.insight .muted { font-size: 13px; }
+	.insight .more { margin-left: auto; }
+	.insight:hover .more { color: var(--brand-text); text-decoration-color: var(--brand-text); }
 	.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); border-top: 1px solid var(--border); border-left: 1px solid var(--border); }
 	.card { display: flex; flex-direction: column; gap: 14px; padding: 20px; background: var(--card); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); color: inherit; text-decoration: none; transition: background 0.12s; }
 	.card:hover { background: var(--hover); }
