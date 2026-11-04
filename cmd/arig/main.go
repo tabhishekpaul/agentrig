@@ -28,7 +28,7 @@ Usage:
   arig add <skill>...     pin skills to this project (.arig/arig.json) and link them in
   arig remove <skill>...  unpin skills from this project and unlink them
   arig apply              link this project's skills (.arig/) into every tool
-  arig mcp          run the MCP server (stdio) that lets AI tools search and load your skills
+  arig mcp          run the MCP server (stdio) that lets AI tools search, load and manage your skills
   arig uninstall    stop the background server and stop starting it at login
   arig version      print the version
 `
@@ -60,7 +60,7 @@ func main() {
 	case "add", "remove", "apply":
 		projectCmd(cmd, os.Args[2:])
 	case "mcp": // stdout carries the protocol: errors go to stderr only
-		s := &mcpserver.Server{Entries: func() []catalog.Entry { return catalog.Local(adapters.Detect()) }, Version: version}
+		s := &mcpserver.Server{Entries: func() []catalog.Entry { return catalog.Local(adapters.Detect()) }, Version: version, Rig: rig()}
 		if err := s.Serve(os.Stdin, os.Stdout); err != nil {
 			fail(err)
 		}

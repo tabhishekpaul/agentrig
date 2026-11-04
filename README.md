@@ -55,6 +55,12 @@ Every skill you switch on is loaded into each session, so keep only the few you 
 
 Open **AI access** in the dashboard to add or remove it in each tool with one click. arig only touches its own `arig` entry and keeps every other key; for config files with comments (JSONC) and for Codex (TOML) it shows a snippet to paste instead.
 
+## arig inside your AI tools
+
+`arig mcp` can also manage the rig: `rig_overview` (skills on per tool, ≈tokens per message, MCP server names, cleanup suggestions), `marketplace_search`, `marketplace_skill`, `install_skill`, `set_skill_enabled` and `remove_skill`. Skills with safety flags are never installed until you confirm, and removed skills go to the backups list.
+
+On **AI access**, **arig agent** adds a ready-made `arig` agent that uses those tools to tools with custom agents: Claude Code (`~/.claude/agents/arig.md`), opencode (`~/.config/opencode/agents/arig.md`), Factory Droid (`~/.factory/droids/arig.md`), GitHub Copilot CLI (`~/.copilot/agents/arig.agent.md`), Gemini CLI (`~/.gemini/agents/arig.md`) and Kiro (`~/.kiro/agents/arig.json`). arig never overwrites an agent file it didn't write. Then ask, e.g. in Claude Code: *use the arig agent to switch off skills I don't use*.
+
 ## Marketplace: search and install from skills.sh
 
 The **Marketplace** page searches the [skills.sh](https://skills.sh) registry directly (most installed first), with category shortcuts and suggestions for a project folder: arig reads file names and `package.json` locally and only sends the search words. It is the one page that needs the internet.

@@ -4,6 +4,7 @@
 	import ToolIcon from '../../lib/ToolIcon.svelte';
 
 	let clients = $state(null);
+	let agents = $state({}); // tool -> arig agent status (only tools with custom agents)
 	let error = $state('');
 	let busy = $state('');
 	let open = $state(''); // tool whose snippet is shown
@@ -11,18 +12,20 @@
 
 	async function load() {
 		try {
-			clients = await api('mcp/clients');
+			const [c, a] = await Promise.all([api('mcp/clients'), api('agents')]);
+			clients = c;
+			agents = Object.fromEntries(a.map((x) => [x.tool, x]));
 		} catch (e) {
 			error = e.message;
 		}
 	}
 	load();
 
-	async function set(c, enabled) {
-		busy = c.tool;
+	async function set(c, enabled, what = 'mcp/clients') {
+		busy = c.tool + what;
 		error = '';
 		try {
-			await api('mcp/clients', {
+			await api(what, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ tool: c.tool, enabled })
@@ -48,12 +51,14 @@
 
 <div class="body">
 	<p class="lead">
-		Keep only the few skills you use every day switched on in each tool. With arig connected, your AI can search every skill on this
-		computer, switched on or not, and load the right one when a task needs it.
+		Connect arig so your AI can search, install and tidy skills for you. In Claude Code, ask:
+		<code class="ask">use the arig agent to switch off skills I don't use</code>
 	</p>
 	<p class="muted small">
-		arig adds itself as an MCP server named <code>arig</code> that runs <code>arig mcp</code>. Nothing else in the config is changed.
-		Restart the tool afterwards.
+		<strong>MCP server</strong> adds arig as a server named <code>arig</code> that runs <code>arig mcp</code>: your AI can search every
+		skill on this computer, switched on or not, find new ones on skills.sh, and switch skills on or off. <strong>arig agent</strong> adds a
+		ready-made agent that uses those tools and always asks before installing flagged skills or removing anything. Nothing else in the
+		config is changed. Restart the tool afterwards.
 	</p>
 	{#if error}<p class="err">{error}</p>{/if}
 
@@ -63,17 +68,18 @@
 	{:else}
 		<ul>
 			{#each clients as c (c.tool)}
+				{@const ag = agents[c.tool]}
 				<li>
+					<div class="tool"><ToolIcon id={c.tool} size={18} /><strong>{c.name}</strong></div>
 					<div class="row">
-						<ToolIcon id={c.tool} size={18} />
 						<div class="who">
-							<strong>{c.name}</strong>
+							<span>MCP server</span>
 							<code class="src">{c.file}</code>
 						</div>
 						<span class="status"><span class="dot" class:ok={c.configured}></span>{c.configured ? 'Connected' : 'Not connected'}</span>
 						{#if c.writable}
 							<button class={c.configured ? 'ghost' : 'primary'} disabled={!!busy} onclick={() => set(c, !c.configured)}>
-								{busy === c.tool ? 'Saving…' : c.configured ? 'Remove' : 'Add'}
+								{busy === c.tool + 'mcp/clients' ? 'Saving…' : c.configured ? 'Remove' : 'Add'}
 							</button>
 						{:else}
 							<button class="ghost" aria-expanded={open === c.tool} onclick={() => (open = open === c.tool ? '' : c.tool)}>
@@ -81,6 +87,28 @@
 							</button>
 						{/if}
 					</div>
+					{#if ag}
+						<div class="row">
+							<div class="who">
+								<span>arig agent</span>
+								<code class="src">{ag.file}</code>
+							</div>
+							<span class="status"><span class="dot" class:ok={ag.enabled}></span>{ag.enabled ? 'Installed' : 'Not installed'}</span>
+							<button
+								class={ag.enabled ? 'ghost' : 'primary'}
+								disabled={!!busy || !!ag.note}
+								title={ag.note}
+								onclick={() => set(c, !ag.enabled, 'agents')}
+							>
+								{busy === c.tool + 'agents' ? 'Saving…' : ag.enabled ? 'Remove' : 'Add'}
+							</button>
+						</div>
+						{#if ag.note}
+							<p class="muted small hint">{ag.note}</p>
+						{:else if ag.enabled && !c.configured}
+							<p class="muted small hint">The agent works through arig's MCP server: add that too.</p>
+						{/if}
+					{/if}
 					{#if !c.writable && open === c.tool}
 						<div class="snippet">
 							{#if c.note}<p class="muted small">{c.note}</p>{/if}
@@ -109,9 +137,13 @@
 	.err { margin: 16px 0 0; padding: 10px 12px; font-size: 13px; color: var(--brand-text); background: var(--brand-tint); border-left: 2px solid var(--brand); white-space: pre-wrap; word-break: break-word; }
 	ul { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
 	li { padding: 12px 0; border-bottom: 1px solid var(--border); }
-	.row { display: flex; align-items: center; gap: 12px; }
+	.tool { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+	.tool strong { font-size: 13.5px; font-weight: 500; }
+	.row { display: flex; align-items: center; gap: 12px; padding: 4px 0 4px 30px; }
+	.hint { padding-left: 30px; }
+	.ask { display: inline-block; margin-top: 4px; padding: 2px 8px; font-size: 12.5px; color: var(--foreground); background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); }
 	.who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-	.who strong { font-size: 13.5px; font-weight: 500; }
+	.who span { font-size: 13px; }
 	.src { font-size: 10.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); width: 110px; }
 	button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; min-width: 88px; padding: 0 14px; border-radius: var(--radius); font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid transparent; }

@@ -20,10 +20,12 @@ type client struct {
 	id  int
 }
 
-func start(t *testing.T, entries []catalog.Entry) *client {
+func start(t *testing.T, entries []catalog.Entry) *client { return startRig(t, entries, nil) }
+
+func startRig(t *testing.T, entries []catalog.Entry, rig *Rig) *client {
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
-	s := &Server{Entries: func() []catalog.Entry { return entries }, Version: "test"}
+	s := &Server{Entries: func() []catalog.Entry { return entries }, Version: "test", Rig: rig}
 	go func() { s.Serve(inR, outW); outW.Close() }()
 	t.Cleanup(func() { inW.Close() })
 	return &client{t: t, in: inW, out: bufio.NewReader(outR)}
@@ -95,7 +97,7 @@ func TestProtocol(t *testing.T) {
 	for _, tl := range r["result"].(map[string]any)["tools"].([]any) {
 		names = append(names, tl.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, ",") != "search_skills,get_skill,list_categories" {
+	if strings.Join(names, ",") != "search_skills,get_skill,list_categories,rig_overview,marketplace_search,marketplace_skill,install_skill,set_skill_enabled,remove_skill" {
 		t.Fatalf("tools: %v", names)
 	}
 	if r := c.call("nope", nil); r["error"].(map[string]any)["code"].(float64) != -32601 {
