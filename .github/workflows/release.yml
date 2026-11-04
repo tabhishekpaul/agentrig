@@ -14,23 +14,15 @@ permissions:
 
 jobs:
   build:
-    # The app window needs cgo where it's native: macOS links the system
-    # WebKit, Windows x64 links WebView2 (MinGW on the Windows runner). Linux
-    # and Windows arm64 are pure Go and cross-compile on the Mac runner.
-    strategy:
-      matrix:
-        include:
-          - runner: macos-latest
-            targets: darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/arm64
-          - runner: windows-latest
-            targets: windows/amd64
-    runs-on: ${{ matrix.runner }}
+    # Pure Go everywhere (the app windows load WebKit/WebView2/WebKitGTK at
+    # runtime), so every platform cross-compiles from one Linux runner.
+    runs-on: ubuntu-latest
     defaults:
       run:
         shell: bash
     env:
       VERSION: ${{ inputs.version }}
-      TARGETS: ${{ matrix.targets }}
+      TARGETS: darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64 windows/arm64
     steps:
       - name: Check version
         run: |
@@ -55,19 +47,12 @@ jobs:
           for t in $TARGETS; do
             os=${t%/*}; arch=${t#*/}; name=arig_${os}_${arch}; ext=""
             [ "$os" = windows ] && ext=.exe
-            cgo=0; cc=""
-            if [ "$os" = darwin ]; then
-              cgo=1; cc="clang -arch $([ "$arch" = amd64 ] && echo x86_64 || echo arm64)"
-            elif [ "$os/$arch" = windows/amd64 ]; then
-              cgo=1; cc=gcc
-            fi
             mkdir -p "build/$name"
-            CGO_ENABLED=$cgo CC="$cc" GOOS=$os GOARCH=$arch go build -trimpath \
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
               -ldflags "-s -w -X main.version=${VERSION}" -o "build/$name/arig$ext" ./cmd/arig
             cp LICENSE README.md "build/$name/"
             if [ "$os" = windows ]; then
-              if command -v zip >/dev/null; then (cd build && zip -qr "../dist/$name.zip" "$name")
-              else (cd build && 7z a -tzip -bso0 "../dist/$name.zip" "$name"); fi
+              (cd build && zip -qr "../dist/$name.zip" "$name")
             else
               tar -C build -czf "dist/$name.tar.gz" "$name"
             fi
@@ -75,7 +60,7 @@ jobs:
           ls -la dist
       - uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ matrix.runner }}
+          name: dist
           path: dist/*
 
   publish:
