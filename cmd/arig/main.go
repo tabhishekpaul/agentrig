@@ -24,6 +24,7 @@ it starts at login and runs in the background.
 Usage:
   arig              open the dashboard (starts the background server if needed)
   arig launch       same as arig
+  arig app          open the dashboard in its own window instead of the browser
   arig add <skill>...     pin skills to this project (.arig.json) and link them in
   arig remove <skill>...  unpin skills from this project and unlink them
   arig apply              link this project's .arig.json skills into every tool
@@ -41,6 +42,8 @@ func main() {
 	switch cmd {
 	case "", "launch":
 		open()
+	case "app":
+		openApp()
 	case "serve": // what the background service runs
 		fs := flag.NewFlagSet("serve", flag.ExitOnError)
 		port := fs.Int("port", agentrig.DefaultPort, "port on this machine")

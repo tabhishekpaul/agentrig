@@ -39,6 +39,10 @@ Changes apply to new sessions of each tool.
 
 The UI (dark only, crimson accent) uses Poppins, Lucide icons and each tool's brand icon (from [lobe-icons](https://github.com/lobehub/lobe-icons), MIT; tools without one show a `?`), all bundled into the binary: `arig` works fully offline.
 
+## Use it as an app
+
+`arig app` opens the dashboard in its own window instead of a browser tab. On macOS it's a native window (the system WebKit), and arig adds **agentrig** to `~/Applications`, so you can open it from Spotlight, Launchpad or the Dock. On Windows and Linux it opens an app window (no tabs or address bar) in Edge or Chrome. Links to other sites open in your browser. The browser keeps working too: http://arig.localhost:7377.
+
 ## Let your AI find skills (`arig mcp`)
 
 Every skill you switch on is loaded into each session, so keep only the few you use daily switched on. `arig mcp` is an MCP server (stdio) that lets your AI search and load every skill on this computer, switched on or not, when a task needs it. Tools: `search_skills`, `get_skill` (SKILL.md plus any file in the skill folder) and `list_categories`.

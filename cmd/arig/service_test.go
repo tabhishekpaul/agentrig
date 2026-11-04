@@ -23,3 +23,9 @@ func TestPlistIsValid(t *testing.T) {
 		t.Fatalf("plutil: %v %s", err, out)
 	}
 }
+
+func TestShellQuote(t *testing.T) {
+	if got := shellQuote("/a b/it's"); got != `'/a b/it'\''s'` {
+		t.Fatal(got)
+	}
+}

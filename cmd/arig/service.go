@@ -122,6 +122,9 @@ func ensureService() error {
 	stale := running && agentrig.RunningBuild(agentrig.DefaultPort) != agentrig.Build
 	switch runtime.GOOS {
 	case "darwin":
+		if err := installBundle(exe); err != nil {
+			fmt.Fprintln(os.Stderr, "arig: couldn't create agentrig.app:", err) // the server matters more
+		}
 		changed, err := writeIfChanged(plistPath(), plist(exe))
 		if err != nil {
 			return err
@@ -183,6 +186,7 @@ func removeService() error {
 	switch runtime.GOOS {
 	case "darwin":
 		_ = run("launchctl", "bootout", launchdTarget()+"/"+label)
+		_ = removeBundle()
 		if err := os.Remove(plistPath()); err != nil && !os.IsNotExist(err) {
 			return err
 		}
