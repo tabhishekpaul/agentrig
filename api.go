@@ -3,6 +3,7 @@ package agentrig
 import (
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 
 	"github.com/tabhishekpaul/agentrig/adapters"
 	"github.com/tabhishekpaul/agentrig/gitsync"
@@ -71,6 +72,25 @@ func registerAPI(mux *http.ServeMux, s *gitsync.Syncer) {
 	})
 	mux.HandleFunc("GET /api/tools", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, adapters.Detect())
+	})
+	// Remove: skills go to the backups list (restorable from Insights), Claude
+	// Code plugins are uninstalled through its CLI.
+	mux.HandleFunc("POST /api/remove", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Tool string `json:"tool"`
+			Kind string `json:"kind"`
+			ID   string `json:"id"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		backup, err := adapters.Remove(req.Tool, req.Kind, req.ID, filepath.Join(s.Dir, "backup"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		writeJSON(w, map[string]string{"backup": backup})
 	})
 	mux.HandleFunc("POST /api/toggle", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
