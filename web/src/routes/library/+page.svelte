@@ -34,7 +34,13 @@
 		const rank = new Map(ranked.map((id, n) => [id, n]));
 		return rows.filter((x) => rank.has(x.i.id)).sort((a, b) => rank.get(a.i.id) - rank.get(b.i.id));
 	});
-	const shown = $derived(kind === 'skill' ? skillRows : items.filter((x) => (!kind || x.i.kind === kind) && matches(x)));
+	const shown = $derived(
+		kind === 'skill'
+			? skillRows
+			: kind === 'disabled'
+				? disabled.filter(matches)
+				: items.filter((x) => (!kind || x.i.kind === kind) && matches(x))
+	);
 
 	Promise.all([api('categories'), api('skills')])
 		.then(([c, s]) => {
@@ -61,9 +67,51 @@
 		{ id: '', label: 'All' },
 		{ id: 'skill', label: 'Skills' },
 		{ id: 'plugin', label: 'Plugins' },
-		{ id: 'mcp', label: 'MCP' }
+		{ id: 'mcp', label: 'MCP' },
+		{ id: 'disabled', label: 'Disabled' }
 	];
-	const kindCount = (k) => count(items.map((x) => x.i), k);
+	// Disabled tab: everything switched off, with bulk remove.
+	const disabled = $derived(items.filter((x) => x.i.toggleable && !x.i.enabled));
+	const kindCount = (k) => (k === 'disabled' ? disabled.length : count(items.map((x) => x.i), k));
+	let picked = $state({}); // key -> true
+	let bulkArmed = $state(false);
+	let bulkBusy = $state(false);
+	const pickable = $derived(shown.filter(({ i, t }) => kind === 'disabled' && removable(t, i)));
+	const pickedRows = $derived(pickable.filter(({ i, t }) => picked[key(t, i)]));
+	const allPicked = $derived(pickable.length > 0 && pickedRows.length === pickable.length);
+	function pickAll() {
+		picked = allPicked ? {} : Object.fromEntries(pickable.map(({ i, t }) => [key(t, i), true]));
+		bulkArmed = false;
+	}
+
+	async function removePicked() {
+		if (!bulkArmed) {
+			bulkArmed = true; // first click arms, second click removes
+			return;
+		}
+		bulkArmed = false;
+		bulkBusy = true;
+		error = notice = '';
+		let n = 0;
+		const failed = [];
+		for (const { i, t } of pickedRows) {
+			try {
+				await api('remove', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ tool: t.id, kind: i.kind, id: i.id })
+				});
+				n++;
+			} catch (e) {
+				failed.push(`${i.name} (${t.name}): ${e.message}`);
+			}
+		}
+		picked = {};
+		bulkBusy = false;
+		notice = `Removed ${n} disabled item${n === 1 ? '' : 's'}. Removed skills can be restored from Insights › Backups.`;
+		if (failed.length) error = `Couldn't remove: ${failed.join('; ')}`;
+		await load();
+	}
 
 	async function remove(i, t) {
 		if (removing !== key(t, i)) {
@@ -128,6 +176,23 @@
 {#if error}<p class="err">{error}</p>{/if}
 {#if notice}<p class="note">{notice}</p>{/if}
 
+{#if kind === 'disabled'}
+	<div class="bulk">
+		<label class="check"><input type="checkbox" checked={allPicked} disabled={!pickable.length} onchange={pickAll} /> Select all ({pickable.length})</label>
+		<span class="hint">Switched-off items still sit in each tool's folders. Removing them keeps your library tidy.</span>
+		<button
+			class="danger"
+			class:armed={bulkArmed}
+			disabled={!pickedRows.length || bulkBusy}
+			onclick={removePicked}
+			onblur={() => (bulkArmed = false)}
+		>
+			<Trash2 size={14} />
+			{bulkBusy ? 'Removing…' : bulkArmed ? `Confirm: remove ${pickedRows.length}` : `Remove selected (${pickedRows.length})`}
+		</button>
+	</div>
+{/if}
+
 <div class="split">
 {#if kind === 'skill'}
 	<nav class="cats" aria-label="Skill categories">
@@ -150,7 +215,18 @@
 {/if}
 <ul>
 	{#each shown as { i, t } (t.id + i.kind + i.id)}
-		<li class:off={!i.enabled}>
+		<li class:off={!i.enabled && kind !== 'disabled'}>
+			{#if kind === 'disabled'}
+				<input
+					class="pick"
+					type="checkbox"
+					aria-label="Select {i.name}"
+					disabled={!removable(t, i)}
+					title={removable(t, i) ? '' : 'This can only be switched on or off here'}
+					checked={!!picked[key(t, i)]}
+					onchange={(e) => ((picked[key(t, i)] = e.currentTarget.checked), (bulkArmed = false))}
+				/>
+			{/if}
 			<div class="body">
 				<div class="name">
 					<span>{i.name}</span>
@@ -182,7 +258,7 @@
 			{/if}
 		</li>
 	{:else}
-		<li class="empty muted">{store.loaded ? 'Nothing matches.' : 'Scanning…'}</li>
+		<li class="empty muted">{!store.loaded ? 'Scanning…' : kind === 'disabled' && !q ? 'Nothing is switched off.' : 'Nothing matches.'}</li>
 	{/each}
 </ul>
 </div>
@@ -228,6 +304,16 @@
 	.rm:hover { color: var(--brand-text); }
 	.rm.armed { color: var(--brand-text); border-color: var(--brand); background: var(--brand-tint); }
 	.note { margin: 12px 24px 0; padding: 10px 12px; font-size: 13px; color: var(--foreground); background: var(--hover); border-left: 2px solid var(--muted); }
+	.bulk { flex: none; display: flex; align-items: center; gap: 16px; padding: 10px 24px; border-bottom: 1px solid var(--border); background: var(--card); }
+	.bulk .hint { flex: 1; }
+	.check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+	input[type='checkbox'] { accent-color: var(--brand); width: 15px; height: 15px; cursor: pointer; }
+	input[type='checkbox']:disabled { cursor: not-allowed; opacity: 0.4; }
+	.pick { flex: none; }
+	.danger { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--input); border-radius: var(--radius); background: none; color: var(--foreground); font: 500 13px Poppins, sans-serif; cursor: pointer; white-space: nowrap; }
+	.danger:not(:disabled):hover { border-color: var(--brand); color: var(--brand-text); }
+	.danger.armed { background: var(--brand); border-color: var(--brand); color: #fff; }
+	.danger:disabled { opacity: 0.45; cursor: not-allowed; }
 	.switch { flex: none; width: 36px; height: 20px; border: 0; padding: 2px; border-radius: 10px; background: var(--input); cursor: pointer; transition: background 0.15s; }
 	.switch span { display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--muted); box-shadow: 0 1px 2px rgb(0 0 0 / 30%); transition: transform 0.15s; }
 	.switch.on { background: var(--brand); }
