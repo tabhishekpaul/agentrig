@@ -12,12 +12,13 @@ import (
 // copy edited by hand is left alone. Generated folders under ~/.arig/index
 // are always relinked (their copies only go stale). Returns how many.
 func Relink(home string) (n int) {
-	gen := filepath.Join(home, ".arig", "index") + string(filepath.Separator)
+	gen := filepath.Join(home, ".arig", "index")
+	root := RootAt(home)
 	for _, d := range skillDirs(home) {
 		ents, _ := os.ReadDir(d)
 		for _, e := range ents {
 			p := filepath.Join(d, e.Name())
-			if relinkOne(p, gen) {
+			if relinkOne(p, root, gen) {
 				n++
 			}
 		}
@@ -25,17 +26,23 @@ func Relink(home string) (n int) {
 	return n
 }
 
-func relinkOne(p, gen string) bool {
+func relinkOne(p, root, gen string) bool {
 	marker := filepath.Join(p, copyMarker)
 	b, err := os.ReadFile(marker)
 	if err != nil {
 		return false // not a copy arig made
 	}
-	src := strings.TrimSpace(string(b))
-	if !isDir(src) {
+	// The marker is a file anyone's skill could ship: follow it only to a
+	// direct entry of the library (<root>/<name>/<hash>) or the index dir.
+	src, err := filepath.EvalSymlinks(filepath.Clean(strings.TrimSpace(string(b))))
+	if err != nil || !isDir(src) {
 		return false
 	}
-	if !strings.HasPrefix(src, gen) {
+	generated := within(src, gen, 1)
+	if !generated && !within(src, root, 2) {
+		return false
+	}
+	if !generated {
 		want, err := Hash(src)
 		if err != nil || os.Remove(marker) != nil {
 			return false
@@ -60,4 +67,17 @@ func relinkOne(p, gen string) bool {
 	}
 	os.RemoveAll(tmp)
 	return true
+}
+
+// within: p is exactly depth folders below dir (both resolved).
+func within(p, dir string, depth int) bool {
+	d, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(d, p)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		return false
+	}
+	return len(strings.Split(rel, string(filepath.Separator))) == depth
 }

@@ -3,9 +3,6 @@ package library
 import (
 	"os"
 	"path/filepath"
-	"runtime"
-
-	"github.com/tabhishekpaul/agentrig/internal/proc"
 )
 
 // LinkDir points at to the folder real without copying it: a relative
@@ -21,5 +18,5 @@ func LinkDir(at, real string) bool {
 			return true
 		}
 	}
-	return runtime.GOOS == "windows" && proc.Command("cmd", "/c", "mklink", "/J", at, real).Run() == nil
+	return junction(at, real) == nil
 }
