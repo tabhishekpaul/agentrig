@@ -2,7 +2,7 @@
 
 One dashboard for the skills, plugins and MCP servers across your AI coding tools.
 
-agentrig ships as a single binary, `arig`. Run it and your browser opens a local dashboard showing everything installed in your AI tools — no terminal commands to learn.
+agentrig ships as a single binary, `arig`. Run `arig launch and your browser opens a local dashboard showing everything installed in your AI tools — no terminal commands to learn.
 
 ## Status
 
@@ -29,7 +29,7 @@ Requires Go 1.27+ and Node 20+ to build.
 ```sh
 cd web && npm install && npm run build && cd ..
 go build -o arig ./cmd/arig
-./arig
+./arig launch
 ```
 
 The browser opens at `http://127.0.0.1:<port>/?token=…`.
@@ -37,7 +37,7 @@ The browser opens at `http://127.0.0.1:<port>/?token=…`.
 ## Develop
 
 ```sh
-go run ./cmd/arig -addr 127.0.0.1:7777 -no-open   # prints the token
+go run ./cmd/arig launch -addr 127.0.0.1:7777 -no-open   # prints the token
 cd web && npm run dev                     # open the Vite URL with ?token=<token>
 ```
 

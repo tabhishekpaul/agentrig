@@ -7,10 +7,8 @@ import (
 	"crypto/subtle"
 	"embed"
 	"encoding/hex"
-	"flag"
 	"fmt"
 	"io/fs"
-	"log"
 	"net"
 	"net/http"
 	"os/exec"
@@ -21,15 +19,12 @@ import (
 //go:embed all:web/build
 var webBuild embed.FS
 
-// Run starts the local dashboard server; it blocks until the server stops.
-func Run() {
-	addr := flag.String("addr", "127.0.0.1:0", "listen address (keep it on loopback)")
-	noOpen := flag.Bool("no-open", false, "don't open the browser")
-	flag.Parse()
-
-	ln, err := net.Listen("tcp", *addr)
+// Launch serves the dashboard on addr and, if open is set, opens it in the
+// browser. It blocks until the server stops.
+func Launch(addr string, open bool) error {
+	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	host := ln.Addr().String()
 	token := randomToken()
@@ -41,10 +36,10 @@ func Run() {
 
 	url := fmt.Sprintf("http://%s/?token=%s", host, token)
 	fmt.Println("arig running at", url)
-	if !*noOpen {
+	if open {
 		openBrowser(url)
 	}
-	log.Fatal(http.Serve(ln, guard(host, token, mux)))
+	return http.Serve(ln, guard(host, token, mux))
 }
 
 // guard blocks other websites from driving the local API:
