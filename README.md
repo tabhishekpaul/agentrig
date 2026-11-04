@@ -32,6 +32,12 @@ Changes apply to new sessions of each tool.
 
 The UI (dark only, crimson accent) uses Poppins, Lucide icons and each tool's brand icon (from [lobe-icons](https://github.com/lobehub/lobe-icons), MIT; tools without one show a `?`), all bundled into the binary: `arig` works fully offline.
 
+## Let your AI find skills (`arig mcp`)
+
+Every skill you switch on is loaded into each session, so keep only the few you use daily switched on. `arig mcp` is an MCP server (stdio) that lets your AI search and load every skill on this computer, switched on or not, when a task needs it. Tools: `search_skills`, `get_skill` (SKILL.md plus any file in the skill folder) and `list_categories`.
+
+Open **AI access** in the dashboard to add or remove it in each tool with one click. arig only touches its own `arig` entry and keeps every other key; for config files with comments (JSONC) and for Codex (TOML) it shows a snippet to paste instead.
+
 ## Sync between machines
 
 Open **Sync** in the dashboard. arig checks which git accounts this computer is signed in to through the GitHub CLI (`gh`) or GitLab CLI (`glab`) and looks for a repo called `arig-sync`. If it exists, pick **Use this repo**; if not, arig offers to create it as a private repo, and only does so after you confirm. Any other git host works too: create an empty private repo and paste its URL. Do the same on your other machines. arig then syncs every 15 minutes while it runs, or whenever you press **Sync now**.

@@ -29,6 +29,7 @@ func syncReply(w http.ResponseWriter, c gitsync.Config, err error) {
 
 func registerAPI(mux *http.ServeMux, s *gitsync.Syncer) {
 	registerProjects(mux)
+	registerSkills(mux)
 	mux.HandleFunc("GET /api/sync", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, syncStatus{syncView(s.Status()), s.Phase()})
 	})

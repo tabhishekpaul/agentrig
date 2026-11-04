@@ -10,6 +10,9 @@ import (
 
 	"github.com/tabhishekpaul/agentrig"
 	"github.com/tabhishekpaul/agentrig/projects"
+	"github.com/tabhishekpaul/agentrig/adapters"
+	"github.com/tabhishekpaul/agentrig/catalog"
+	"github.com/tabhishekpaul/agentrig/mcpserver"
 )
 
 // version is set at release build time (-ldflags "-X main.version=v1.2.3").
@@ -24,6 +27,7 @@ Usage:
   arig add <skill>...     pin skills to this project (.arig.json) and link them in
   arig remove <skill>...  unpin skills from this project and unlink them
   arig apply              link this project's .arig.json skills into every tool
+  arig mcp          run the MCP server (stdio) that lets AI tools search and load your skills
   arig uninstall    stop the background server and stop starting it at login
   arig version      print the version
 `
@@ -51,6 +55,11 @@ func main() {
 		}
 	case "add", "remove", "apply":
 		projectCmd(cmd, os.Args[2:])
+	case "mcp": // stdout carries the protocol: errors go to stderr only
+		s := &mcpserver.Server{Entries: func() []catalog.Entry { return catalog.Local(adapters.Detect()) }, Version: version}
+		if err := s.Serve(os.Stdin, os.Stdout); err != nil {
+			fail(err)
+		}
 	case "uninstall":
 		if err := removeService(); err != nil {
 			fail(err)
