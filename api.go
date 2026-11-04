@@ -37,6 +37,21 @@ func registerAPI(mux *http.ServeMux, s *gitsync.Syncer) {
 		c, err := s.Connect(req.Repo)
 		syncReply(w, c, err)
 	})
+	mux.HandleFunc("GET /api/sync/providers", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, gitsync.Providers())
+	})
+	mux.HandleFunc("POST /api/sync/setup", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Provider string `json:"provider"`
+			Create   bool   `json:"create"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		c, err := s.Setup(req.Provider, req.Create)
+		syncReply(w, c, err)
+	})
 	mux.HandleFunc("POST /api/sync/run", func(w http.ResponseWriter, r *http.Request) {
 		c, err := s.Run()
 		syncReply(w, c, err)

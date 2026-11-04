@@ -57,6 +57,8 @@ func plist(exe string) string {
 	<key>RunAtLoad</key><true/>
 	<key>KeepAlive</key><true/>
 	<key>ProcessType</key><string>Background</string>
+	<key>EnvironmentVariables</key>
+	<dict><key>PATH</key><string>` + e(servicePath()) + `</string></dict>
 	<key>StandardOutPath</key><string>` + e(logPath()) + `</string>
 	<key>StandardErrorPath</key><string>` + e(logPath()) + `</string>
 </dict>
@@ -70,12 +72,23 @@ Description=agentrig dashboard (arig)
 
 [Service]
 ExecStart="` + exe + `" serve
+Environment="PATH=` + servicePath() + `"
 Restart=always
 RestartSec=5
 
 [Install]
 WantedBy=default.target
 `
+}
+
+// servicePath is the PATH the background server gets: the user's shell PATH,
+// so it finds git, gh and glab where they're installed (launchd's default
+// PATH lacks /opt/homebrew/bin and friends).
+func servicePath() string {
+	if p := os.Getenv("PATH"); p != "" {
+		return p
+	}
+	return "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 }
 
 func run(name string, args ...string) error {

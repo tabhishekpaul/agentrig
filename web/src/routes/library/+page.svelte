@@ -3,6 +3,7 @@
 	import { Search } from '@lucide/svelte';
 	import { api } from '../../lib/api.js';
 	import { store, count } from '../../lib/tools.svelte.js';
+	import ToolIcon from '../../lib/ToolIcon.svelte';
 
 	let q = $state('');
 	let kind = $state('');
@@ -42,7 +43,7 @@
 <header>
 	<div class="title">
 		<span class="label-mono">{tool ? store.tools.find((x) => x.id === tool)?.name ?? tool : 'all tools'}</span>
-		<h1>Library</h1>
+		<h1>{#if tool}<ToolIcon id={tool} size={24} />{/if}Library</h1>
 	</div>
 	<label class="search">
 		<Search size={15} />
@@ -69,7 +70,7 @@
 				<div class="name">
 					<span>{i.name}</span>
 					<code class="meta">{i.kind}</code>
-					{#if !tool}<span class="tool">{t.name}</span>{/if}
+					{#if !tool}<span class="tool"><ToolIcon id={t.id} size={12} />{t.name}</span>{/if}
 				</div>
 				{#if i.description}<p>{i.description}</p>{/if}
 				{#if i.source}<p class="src">{i.source}</p>{/if}
@@ -93,7 +94,7 @@
 <style>
 	header { flex: none; display: flex; align-items: flex-end; gap: 16px; padding: 20px 24px 16px; border-bottom: 1px solid var(--border); }
 	.title { flex: 1; display: flex; flex-direction: column; gap: 4px; }
-	h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.035em; margin: 0; line-height: 1.1; }
+	h1 { display: flex; align-items: center; gap: 10px; font-size: 26px; font-weight: 500; letter-spacing: -0.035em; margin: 0; line-height: 1.1; }
 	.search { display: flex; align-items: center; gap: 8px; height: 36px; width: min(360px, 40vw); padding: 0 12px; border-radius: var(--radius); background: var(--hover); border: 1px solid transparent; color: var(--muted); }
 	.search:focus-within { border-color: var(--brand-line); }
 	.search input { flex: 1; min-width: 0; border: 0; background: none; outline: none; font-size: 13px; color: var(--foreground); }
@@ -115,7 +116,7 @@
 	.name { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 500; }
 	.meta { font-family: var(--mono); font-size: 10.5px; font-weight: 400; padding: 1px 6px; border: 1px solid var(--input); border-radius: var(--radius); color: var(--muted); }
 	p { margin: 3px 0 0; font-size: 12.5px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 1; line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
-	.tool { font-size: 11px; font-weight: 400; color: var(--faint); }
+	.tool { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 400; color: var(--faint); }
 	.src { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
 	.empty { justify-content: center; padding: 48px; font-size: 13px; border: 0; }
 	.switch { flex: none; width: 36px; height: 20px; border: 0; padding: 2px; border-radius: 10px; background: var(--input); cursor: pointer; transition: background 0.15s; }

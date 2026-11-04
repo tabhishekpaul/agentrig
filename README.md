@@ -1,3 +1,5 @@
+<img src="web/static/icon.svg" width="64" alt="agentrig icon">
+
 # agentrig
 
 One dashboard for the skills, plugins and MCP servers across your AI coding tools.
@@ -28,7 +30,7 @@ How toggles work:
 
 Changes apply to new sessions of each tool.
 
-The UI (dark only, crimson accent) uses Poppins and Lucide icons, both bundled into the binary: `arig` works fully offline.
+The UI (dark only, crimson accent) uses Poppins, Lucide icons and each tool's brand icon (from [lobe-icons](https://github.com/lobehub/lobe-icons), MIT; tools without one show a `?`), all bundled into the binary: `arig` works fully offline.
 
 ## Sync between machines
 

@@ -1,6 +1,7 @@
 <script>
 	import { ArrowRight } from '@lucide/svelte';
 	import { store, count } from '../lib/tools.svelte.js';
+	import ToolIcon from '../lib/ToolIcon.svelte';
 	const installed = $derived(store.tools.filter((t) => t.installed));
 	const missing = $derived(store.tools.filter((t) => !t.installed));
 	const sum = (kind) => store.tools.reduce((n, t) => n + count(t.items, kind), 0);
@@ -30,6 +31,7 @@
 				<a class="card" href="/library?tool={t.id}">
 					<div class="top">
 						<span class="num">{String(n + 1).padStart(2, '0')}</span>
+						<ToolIcon id={t.id} size={18} />
 						<strong>{t.name}</strong>
 						<span class="status"><span class="dot" class:ok={t.installed}></span>{t.installed ? 'Installed' : 'Not found'}</span>
 					</div>
@@ -48,7 +50,9 @@
 		</div>
 		{#if missing.length}
 			<div class="label-mono heading">also supported</div>
-			<p class="missing">{missing.map((t) => t.name).join(' · ')}</p>
+			<div class="missing">
+				{#each missing as t}<span><ToolIcon id={t.id} size={14} />{t.name}</span>{/each}
+			</div>
 		{/if}
 	{/if}
 </div>
@@ -75,14 +79,15 @@
 	.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); border-top: 1px solid var(--border); border-left: 1px solid var(--border); }
 	.card { display: flex; flex-direction: column; gap: 14px; padding: 20px; background: var(--card); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); color: inherit; text-decoration: none; transition: background 0.12s; }
 	.card:hover { background: var(--hover); }
-	.top { display: flex; align-items: baseline; gap: 10px; }
+	.top { display: flex; align-items: center; gap: 10px; }
 	.num { font-family: var(--mono); font-size: 12px; color: var(--brand-text); }
 	strong { flex: 1; font-weight: 500; font-size: 15px; }
 	.status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
 	.chips { display: flex; flex-wrap: wrap; gap: 6px; }
 	code { font-family: var(--mono); font-size: 11px; padding: 3px 7px; border: 1px solid var(--border); border-radius: var(--radius); color: var(--muted); }
 	.empty { font-size: 12px; color: var(--faint); }
-	.missing { margin: 0; font-size: 13px; line-height: 1.8; color: var(--muted); }
+	.missing { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: var(--muted); }
+	.missing span { display: inline-flex; align-items: center; gap: 7px; opacity: 0.75; }
 	.more { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--foreground); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--faint); }
 	.card:hover .more { color: var(--brand-text); text-decoration-color: var(--brand-text); }
 </style>

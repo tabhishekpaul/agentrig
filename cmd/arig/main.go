@@ -11,9 +11,7 @@ import (
 	"github.com/tabhishekpaul/agentrig"
 )
 
-const usage = `arig: manage the skills, plugins and MCP servers across your AI coding tools
-
-The dashboard is always on at http://arig.localhost:7377 once arig has run once:
+const usage = `The dashboard is always on at http://arig.localhost:7377 once arig has run once:
 it starts at login and runs in the background.
 
 Usage:
@@ -49,7 +47,7 @@ func main() {
 		}
 		fmt.Println("arig background server stopped and removed from login items.")
 	case "-h", "--help", "help":
-		fmt.Print(usage)
+		fmt.Print(banner("skills, plugins and MCP servers across your AI coding tools"), "\n", usage)
 	default:
 		fmt.Fprintf(os.Stderr, "arig: unknown command %q\n\n%s", cmd, usage)
 		os.Exit(2)
@@ -68,7 +66,7 @@ func open() {
 		}
 		return
 	}
-	fmt.Println("arig is running at", url)
+	fmt.Print(banner("running at " + url))
 	agentrig.OpenBrowser(url)
 }
 
