@@ -18,7 +18,6 @@ import (
 	"runtime"
 	"unsafe"
 
-	"github.com/tabhishekpaul/agentrig"
 	webview "github.com/webview/webview_go"
 )
 
@@ -40,7 +39,7 @@ func window(url string) error {
 	w.SetSize(1320, 860, webview.HintNone)
 	// The webview can't open new windows: send links that leave the dashboard
 	// (skills.sh, GitHub, docs) to the default browser instead.
-	_ = w.Bind("arigOpen", func(u string) { agentrig.OpenBrowser(u) })
+	_ = w.Bind("arigOpen", openExternal)
 	w.Init(externalLinks)
 	w.Navigate(url)
 	w.Run()

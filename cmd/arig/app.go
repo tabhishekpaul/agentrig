@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"time"
 
@@ -19,6 +20,18 @@ const externalLinks = `document.addEventListener('click', (e) => {
 	const u = new URL(a.href, location.href);
 	if (u.origin !== location.origin) { e.preventDefault(); window.arigOpen(u.href); }
 }, true);`
+
+// openExternal is the only thing the app window may ask of the OS: open an
+// http(s) link in the browser. Other schemes (file:, app handlers) are refused,
+// since the dashboard shows third-party text from skills.sh.
+func openExternal(u string) error {
+	p, err := url.Parse(u)
+	if err != nil || (p.Scheme != "http" && p.Scheme != "https") || p.Host == "" {
+		return errors.New("refused: only http(s) links open outside the app")
+	}
+	agentrig.OpenBrowser(p.String())
+	return nil
+}
 
 // openApp shows the dashboard in its own window, starting the background
 // server first. Without a window (no WebKit/Edge/Chrome) it opens the browser.

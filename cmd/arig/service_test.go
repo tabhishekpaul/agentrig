@@ -29,3 +29,11 @@ func TestShellQuote(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestOpenExternalRefuses(t *testing.T) {
+	for _, u := range []string{"file:///etc/passwd", "javascript:alert(1)", "-a Calculator", "vscode://x", "http://", ""} {
+		if openExternal(u) == nil {
+			t.Errorf("accepted %q", u)
+		}
+	}
+}
