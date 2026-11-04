@@ -12,6 +12,10 @@ import (
 // files over 100 MB and slows down long before that).
 const maxFile = 10 << 20
 
+// Ignored reports whether a file never leaves this machine: secrets (.env*),
+// junk (.DS_Store, node_modules, …) and files over 10 MB. Shared with publishing.
+func Ignored(name string, d fs.DirEntry) bool { return ignored(name, d) }
+
 func ignored(name string, d fs.DirEntry) bool {
 	switch name {
 	case ".DS_Store", ".git", "node_modules", "__pycache__", ".system":

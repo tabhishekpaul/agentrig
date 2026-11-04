@@ -31,6 +31,7 @@ func registerAPI(mux *http.ServeMux, s *gitsync.Syncer) {
 	registerProjects(mux)
 	registerSkills(mux)
 	registerInsights(mux)
+	registerAuthoring(mux)
 	mux.HandleFunc("GET /api/sync", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, syncStatus{syncView(s.Status()), s.Phase()})
 	})
