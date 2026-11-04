@@ -50,7 +50,7 @@ func registerAPI(mux *http.ServeMux, s *gitsync.Syncer) {
 		syncReply(w, c, err)
 	})
 	mux.HandleFunc("GET /api/sync/providers", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, gitsync.Providers())
+		writeJSON(w, gitsync.Providers(r.URL.Query().Has("refresh")))
 	})
 	mux.HandleFunc("POST /api/sync/setup", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {

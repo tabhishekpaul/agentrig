@@ -124,3 +124,27 @@ func TestConnectRejectsFlags(t *testing.T) {
 		t.Fatal("accepted a git flag as repo URL")
 	}
 }
+
+// A repo arig just created is empty: connecting without downloading it must
+// still push this machine's skills and let another machine join normally.
+func TestConnectFreshRepo(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	if out, err := exec.Command("git", "init", "-q", "--bare", "-b", "main", remote).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	a := machine(t)
+	write(t, filepath.Join(a.Home, ".claude/skills/s1/SKILL.md"), "from A")
+	if _, err := a.connect(remote, true); err != nil {
+		t.Fatal(err)
+	}
+	b := machine(t)
+	if _, err := b.Connect(remote); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(filepath.Join(b.Home, ".claude/skills/s1/SKILL.md")); got != "from A" {
+		t.Fatalf("B got %q", got)
+	}
+}

@@ -15,9 +15,9 @@
 
 	api('sync').then((s) => (status = s)).catch((e) => (error = e.message));
 
-	async function checkProviders() {
+	async function checkProviders(refresh = false) {
 		providers = null;
-		providers = await api('sync/providers').catch((e) => {
+		providers = await api('sync/providers' + (refresh ? '?refresh=1' : '')).catch((e) => {
 			error = e.message;
 			return [];
 		});
@@ -125,7 +125,7 @@
 								<button class="ghost" disabled={!!busy} onclick={() => (confirming = p.id)}>Create repo…</button>
 							{/if}
 						{:else if p.installed && !p.loggedIn}
-							<button class="ghost" onclick={checkProviders}>Check again</button>
+							<button class="ghost" onclick={() => checkProviders(true)}>Check again</button>
 						{/if}
 					</div>
 					{#if confirming === p.id}

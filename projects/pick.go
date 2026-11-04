@@ -21,9 +21,9 @@ func PickFolder() (string, error) {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		// "tell me to activate" brings the dialog in front of the browser without
-		// asking to control another app.
-		cmd = exec.CommandContext(ctx, "osascript", "-e", "tell me to activate",
+		// The dialog floats in front of every app on its own. Don't add
+		// "tell me to activate": it costs ~2s before the dialog appears.
+		cmd = exec.CommandContext(ctx, "osascript",
 			"-e", `POSIX path of (choose folder with prompt "Choose a project folder" default location (path to home folder))`)
 	case "windows":
 		cmd = exec.CommandContext(ctx, "powershell", "-NoProfile", "-STA", "-Command",

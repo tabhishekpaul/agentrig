@@ -101,7 +101,12 @@ func (s *Syncer) save(c Config) error {
 // Connect clones the user's repo (empty is fine) and runs a first sync.
 // The first sync only adds: this machine's skills are committed before
 // anything is pulled, so joining never deletes local work.
-func (s *Syncer) Connect(repo string) (Config, error) {
+func (s *Syncer) Connect(repo string) (Config, error) { return s.connect(repo, false) }
+
+// connect with fresh set skips the download: a repo arig just created is
+// empty, so a local repo pointed at it is the same thing, a network round
+// trip sooner.
+func (s *Syncer) connect(repo string, fresh bool) (Config, error) {
 	repo = strings.TrimSpace(repo)
 	if repo == "" || strings.HasPrefix(repo, "-") { // never let input become a git flag
 		return Config{}, errors.New("enter a git repo URL, e.g. git@github.com:you/ai-setup.git")
@@ -112,8 +117,15 @@ func (s *Syncer) Connect(repo string) (Config, error) {
 		s.mu.Unlock()
 		return Config{}, err
 	}
-	s.step("Downloading the repo…")
-	_, err := git(s.Dir, "clone", "--", repo, "repo")
+	var err error
+	if fresh {
+		if _, err = git(s.Dir, "init", "-q", "repo"); err == nil {
+			_, err = git(s.repo(), "remote", "add", "origin", "--", repo)
+		}
+	} else {
+		s.step("Downloading the repo…")
+		_, err = git(s.Dir, "clone", "--", repo, "repo")
+	}
 	s.mu.Unlock()
 	if err != nil {
 		s.step("")

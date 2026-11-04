@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -41,6 +42,7 @@ type host struct {
 	user                   func() (string, error)
 	find                   func(user string) (*RemoteRepo, error) // nil, nil = not found
 	create                 func() error
+	created                func(user string) *RemoteRepo // the new repo's URLs without asking the host again (nil = ask)
 }
 
 var hosts = []host{
@@ -64,6 +66,14 @@ var hosts = []host{
 				clone = r.SSHURL
 			}
 			return &RemoteRepo{Name: user + "/" + RepoName, URL: clone, Web: r.URL}, nil
+		},
+		created: func(user string) *RemoteRepo {
+			web := "https://github.com/" + user + "/" + RepoName
+			clone := web + ".git"
+			if p, _ := cli("gh", "config", "get", "git_protocol", "-h", "github.com"); p == "ssh" {
+				clone = "git@github.com:" + user + "/" + RepoName + ".git"
+			}
+			return &RemoteRepo{Name: user + "/" + RepoName, URL: clone, Web: web}
 		},
 		create: func() error {
 			if _, err := cli("gh", "repo", "create", RepoName, "--private", "--description", repoDescription); err != nil {
@@ -136,8 +146,35 @@ func (h host) probe() Provider {
 	return p
 }
 
-// Providers checks every supported git host CLI in parallel.
-func Providers() []Provider {
+// Each check costs a round trip to every host (~1s), so results are kept for
+// a few minutes: opening the Sync page, then setting up, asks only once.
+var probed struct {
+	sync.Mutex
+	at   time.Time
+	list []Provider
+}
+
+const probeTTL = 3 * time.Minute
+
+// Providers reports every supported git host, from the recent check if there
+// is one (refresh forces a new check).
+func Providers(refresh bool) []Provider {
+	probed.Lock()
+	defer probed.Unlock()
+	if refresh || probed.list == nil || time.Since(probed.at) > probeTTL {
+		probed.list, probed.at = probeAll(), time.Now()
+	}
+	return slices.Clone(probed.list)
+}
+
+func forgetProviders() {
+	probed.Lock()
+	probed.list = nil
+	probed.Unlock()
+}
+
+// probeAll checks every supported git host CLI in parallel.
+func probeAll() []Provider {
 	out := make([]Provider, len(hosts))
 	var wg sync.WaitGroup
 	for i, h := range hosts {
@@ -155,7 +192,16 @@ func (s *Syncer) Setup(providerID string, create bool) (Config, error) {
 		if h.id != providerID {
 			continue
 		}
-		p := h.probe()
+		var p Provider
+		for _, c := range Providers(false) { // the Sync page just checked: reuse it
+			if c.ID == h.id {
+				p = c
+			}
+		}
+		if !p.LoggedIn {
+			s.step(fmt.Sprintf("Checking your %s account…", h.name))
+			p = h.probe()
+		}
 		if !p.LoggedIn {
 			return Config{}, fmt.Errorf("%s isn't signed in: run `%s auth login` in a terminal", p.Name, p.CLI)
 		}
@@ -168,12 +214,16 @@ func (s *Syncer) Setup(providerID string, create bool) (Config, error) {
 				s.step("")
 				return Config{}, fmt.Errorf("couldn't create %s: %w", RepoName, err)
 			}
-			repo, err := h.find(p.User) // one lookup for the URL, not a full re-probe
-			if err != nil || repo == nil {
+			forgetProviders() // it exists now
+			var repo *RemoteRepo
+			var err error
+			if h.created != nil {
+				repo = h.created(p.User)
+			} else if repo, err = h.find(p.User); err != nil || repo == nil {
 				s.step("")
 				return Config{}, fmt.Errorf("created %s but can't find it: %v", RepoName, err)
 			}
-			p.Repo = repo
+			return s.connect(repo.URL, true) // empty: no download needed
 		}
 		return s.Connect(p.Repo.URL)
 	}

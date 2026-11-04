@@ -76,6 +76,7 @@ func Launch(port int, open bool) error {
 
 	syncer := newSyncer()
 	go syncer.Loop(context.Background(), SyncEvery)
+	go gitsync.Providers(false) // warm: the Sync page opens without waiting on GitHub
 
 	ui, _ := fs.Sub(webBuild, "web/build")
 	mux := http.NewServeMux()
