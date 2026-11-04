@@ -2,9 +2,16 @@
 
 # agentrig
 
-One dashboard for the skills, plugins and MCP servers across your AI coding tools.
+The control panel for your AI coding setup: every skill, plugin and MCP server across Claude Code, Codex, Cursor and 14 more tools, in one local dashboard.
 
-agentrig ships as a single binary, `arig`. Run `arig launch` and your browser opens a local dashboard showing everything installed in your AI tools — no terminal commands to learn.
+agentrig ships as a single binary, `arig`. Run it once and the dashboard stays on at http://arig.localhost:7377, with no terminal commands to learn.
+
+- **See and switch everything** in one list, by tool or by category, without hand-editing JSON or TOML.
+- **Know what it costs.** Every enabled skill is loaded into every message. Insights estimates the tokens per tool, shows which skills you actually use (read locally from your own history), and turns off the unused ones in one click, with undo.
+- **Let your AI pick skills itself.** `arig mcp` lets any MCP-capable tool search and load the right skill when a task needs it, so you can keep only a few enabled.
+- **Install safely.** The marketplace pins every skill to an exact commit, flags skills that ship scripts, use the network or pipe downloads into a shell, and shows a diff before any update.
+- **Per-project skills** in a committed `.arig.json`, **packs** you switch together, **profiles**, and a **studio** to write, draft with your own AI, export as a Claude Code plugin, or publish.
+- **Same setup on every computer** through a private git repo you own. API keys and `.env` files never leave your machine, and nothing is tracked.
 
 ## Supported tools
 
