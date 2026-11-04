@@ -23,6 +23,7 @@ type marketRow struct {
 func registerMarket(mux *http.ServeMux) {
 	m := market.New(Version)
 	go m.Loop(context.Background())
+	registerStarter(mux, m)
 
 	rows := func(rs []market.Rec) []marketRow {
 		lock := m.Lock()

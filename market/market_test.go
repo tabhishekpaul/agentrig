@@ -357,3 +357,16 @@ func TestNewer(t *testing.T) {
 		}
 	}
 }
+
+func TestFlagsMediaIsNotBinary(t *testing.T) {
+	png := "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+	if f := Flags([]File{{Path: "static/banner.png", Contents: png}, {Path: "SKILL.md", Contents: "hi"}}); slices.Contains(f, "binary") {
+		t.Errorf("a PNG is not a program: %v", f)
+	}
+	if f := Flags([]File{{Path: "tool", Contents: "\x7fELF\x02\x01"}}); !slices.Contains(f, "binary") {
+		t.Errorf("an ELF executable must be flagged: %v", f)
+	}
+	if f := Flags([]File{{Path: "data.bin", Contents: "a\x00b"}}); !slices.Contains(f, "binary") {
+		t.Errorf("unknown binary data must be flagged: %v", f)
+	}
+}

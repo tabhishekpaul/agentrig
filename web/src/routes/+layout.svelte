@@ -1,6 +1,8 @@
 <script>
 	import '../app.css';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
+	import { api } from '../lib/api.js';
 	import { Bot, House, Library, FolderGit2, RefreshCw, Gauge, PenLine, Store, Eraser } from '@lucide/svelte';
 	import Logo from '../lib/Logo.svelte';
 	import ToolIcon from '../lib/ToolIcon.svelte';
@@ -10,6 +12,13 @@
 	import { store, load } from '../lib/tools.svelte.js';
 	let { children } = $props();
 	load();
+	// First launch: show the starter pack once per session until it's done or skipped.
+	if (page.url.pathname !== '/welcome' && !sessionStorage.getItem('arig-welcome')) {
+		sessionStorage.setItem('arig-welcome', '1');
+		api('starter/progress')
+			.then((p) => !p.onboarded && goto('/welcome'))
+			.catch(() => {});
+	}
 	const total = $derived(store.tools.reduce((n, t) => n + t.items.length, 0));
 	const toolParam = $derived(page.url.searchParams.get('tool'));
 	const nav = [

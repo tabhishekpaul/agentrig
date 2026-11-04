@@ -68,6 +68,9 @@ var (
 	execMagic = [][]byte{[]byte("\x7fELF"), []byte("MZ"), {0xfe, 0xed, 0xfa, 0xce}, {0xfe, 0xed, 0xfa, 0xcf}, {0xce, 0xfa, 0xed, 0xfe}, {0xcf, 0xfa, 0xed, 0xfe}, {0xca, 0xfe, 0xba, 0xbe}}
 )
 
+var mediaExt = []string{".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp", ".avif", ".heic", ".tif", ".tiff",
+	".mp3", ".wav", ".ogg", ".flac", ".m4a", ".mp4", ".webm", ".mov", ".woff", ".woff2", ".ttf", ".otf"}
+
 // Flags lists what a reader should know before installing these files:
 // scripts, network (from scripts), shell-pipe, binary, large.
 func Flags(files []File) []string {
@@ -76,7 +79,10 @@ func Flags(files []File) []string {
 	for _, f := range files {
 		total += len(f.Contents)
 		b := []byte(f.Contents)
-		if bytes.IndexByte(b, 0) >= 0 || slices.ContainsFunc(execMagic, func(p []byte) bool { return bytes.HasPrefix(b, p) }) {
+		exe := slices.ContainsFunc(execMagic, func(p []byte) bool { return bytes.HasPrefix(b, p) })
+		// Images, audio, video and fonts are data, not programs, even though
+		// they contain NUL bytes; anything else binary is worth a warning.
+		if exe || (bytes.IndexByte(b, 0) >= 0 && !slices.Contains(mediaExt, strings.ToLower(path.Ext(f.Path)))) {
 			has["binary"] = true
 			continue
 		}
