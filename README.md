@@ -16,7 +16,7 @@ Planned:
 
 ## Run
 
-Requires Go 1.22+ and Node 20+ to build.
+Requires Go 1.27+ and Node 20+ to build.
 
 ```sh
 cd web && npm install && npm run build && cd ..
