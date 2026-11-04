@@ -33,6 +33,7 @@ Usage:
 `
 
 func main() {
+	agentrig.Version = version
 	cmd := ""
 	if len(os.Args) > 1 {
 		cmd = os.Args[1]

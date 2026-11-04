@@ -28,6 +28,7 @@ type Entry struct {
 	Dir         string   `json:"dir,omitempty"`  // marketplace: folder inside the repo
 	Ref         string   `json:"ref,omitempty"`  // marketplace: commit SHA
 	Stars       int      `json:"stars,omitempty"`
+	Installs    int      `json:"installs,omitempty"`
 	Updated     string   `json:"updated,omitempty"` // RFC 3339
 	Flags       []string `json:"flags,omitempty"`   // safety: scripts, network, shell-pipe, binary
 }
