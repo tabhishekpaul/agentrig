@@ -27,6 +27,15 @@ func (e env) path(p string) string {
 	return p
 }
 
+// display shows a config path the way a user would type it: ~/… when it's
+// under home ($CFG is under home on macOS and Linux).
+func (e env) display(p string) string {
+	if rel, err := filepath.Rel(e.home, e.path(p)); err == nil && filepath.IsLocal(rel) {
+		return "~/" + filepath.ToSlash(rel)
+	}
+	return p
+}
+
 type mcpSource struct {
 	File string
 	Key  []string // object holding the servers, e.g. ["mcpServers"]
@@ -130,7 +139,7 @@ func (s spec) read(e env) Tool {
 	}
 	for _, src := range s.MCP {
 		for _, name := range jsonKeys(e.path(src.File), src.Key) {
-			mcp = append(mcp, Item{Kind: "mcp", ID: name, Name: name, Source: src.File, Enabled: true})
+			mcp = append(mcp, Item{Kind: "mcp", ID: name, Name: name, Source: e.display(src.File), Enabled: true})
 		}
 	}
 	seen = map[string]bool{}

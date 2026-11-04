@@ -46,7 +46,7 @@ func mcpTargets(e env, cp claudePaths) []mcpTarget {
 			continue
 		}
 		if s.CodexTOML != "" {
-			out = append(out, mcpTarget{tool: s.ID, name: s.Name, file: s.CodexTOML, path: e.path(s.CodexTOML), toml: true})
+			out = append(out, mcpTarget{tool: s.ID, name: s.Name, file: e.display(s.CodexTOML), path: e.path(s.CodexTOML), toml: true})
 			continue
 		}
 		if len(s.MCP) == 0 {
@@ -59,7 +59,7 @@ func mcpTargets(e env, cp claudePaths) []mcpTarget {
 				break
 			}
 		}
-		out = append(out, mcpTarget{tool: s.ID, name: s.Name, file: src.File, path: e.path(src.File), key: src.Key})
+		out = append(out, mcpTarget{tool: s.ID, name: s.Name, file: e.display(src.File), path: e.path(src.File), key: src.Key})
 	}
 	return out
 }

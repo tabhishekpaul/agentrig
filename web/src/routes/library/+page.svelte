@@ -1,13 +1,17 @@
 <script>
 	import { page } from '$app/state';
-	import { Search } from '@lucide/svelte';
+	import { Search, Trash2 } from '@lucide/svelte';
 	import { api } from '../../lib/api.js';
-	import { store, count } from '../../lib/tools.svelte.js';
+	import { store, count, load } from '../../lib/tools.svelte.js';
 	import ToolIcon from '../../lib/ToolIcon.svelte';
 
 	let q = $state('');
 	let kind = $state('');
 	let error = $state('');
+	let notice = $state('');
+	let removing = $state(''); // key of the row waiting for a second click
+	const key = (t, i) => `${t.id}:${i.kind}:${i.id}`;
+	const removable = (t, i) => i.kind === 'skill' || (i.kind === 'plugin' && t.id === 'claude');
 	const tool = $derived(page.url.searchParams.get('tool'));
 	const items = $derived(
 		store.tools.filter((t) => !tool || t.id === tool).flatMap((t) => t.items.map((i) => ({ i, t })))
@@ -60,6 +64,28 @@
 	];
 	const kindCount = (k) => count(items.map((x) => x.i), k);
 
+	async function remove(i, t) {
+		if (removing !== key(t, i)) {
+			removing = key(t, i); // first click arms, second click removes
+			return;
+		}
+		removing = '';
+		error = notice = '';
+		try {
+			await api('remove', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ tool: t.id, kind: i.kind, id: i.id })
+			});
+			notice = i.kind === 'skill'
+				? `Removed ${i.name} from ${t.name}. Restore it any time from Insights › Backups.`
+				: `Uninstalled ${i.name} from ${t.name}.`;
+			await load();
+		} catch (e) {
+			error = `${i.name}: ${e.message}`;
+		}
+	}
+
 	async function toggle(i, t) {
 		const want = !i.enabled;
 		i.enabled = want; // optimistic; reverted below if the write fails
@@ -99,6 +125,7 @@
 	<span class="hint">Changes apply to new sessions.</span>
 </div>
 {#if error}<p class="err">{error}</p>{/if}
+{#if notice}<p class="note">{notice}</p>{/if}
 
 <div class="split">
 {#if kind === 'skill'}
@@ -132,6 +159,16 @@
 				{#if i.description}<p>{i.description}</p>{/if}
 				{#if i.source}<p class="src">{i.source}</p>{/if}
 			</div>
+			{#if removable(t, i)}
+				<button
+					class="rm"
+					class:armed={removing === key(t, i)}
+					aria-label="Remove {i.name}"
+					title={i.kind === 'skill' ? 'Remove (kept in Insights › Backups)' : 'Uninstall'}
+					onclick={() => remove(i, t)}
+					onblur={() => removing === key(t, i) && (removing = '')}
+				>{#if removing === key(t, i)}Remove?{:else}<Trash2 size={14} />{/if}</button>
+			{/if}
 			{#if i.toggleable}
 				<button
 					class="switch"
@@ -185,6 +222,11 @@
 	.tool { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 400; color: var(--faint); }
 	.src { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
 	.empty { justify-content: center; padding: 48px; font-size: 13px; border: 0; }
+	.rm { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 28px; padding: 0 8px; border: 1px solid transparent; border-radius: var(--radius); background: none; color: var(--faint); font: 500 12px Poppins, sans-serif; cursor: pointer; opacity: 0; transition: opacity 0.12s, color 0.12s; }
+	li:hover .rm, .rm:focus-visible, .rm.armed { opacity: 1; }
+	.rm:hover { color: var(--brand-text); }
+	.rm.armed { color: var(--brand-text); border-color: var(--brand); background: var(--brand-tint); }
+	.note { margin: 12px 24px 0; padding: 10px 12px; font-size: 13px; color: var(--foreground); background: var(--hover); border-left: 2px solid var(--muted); }
 	.switch { flex: none; width: 36px; height: 20px; border: 0; padding: 2px; border-radius: 10px; background: var(--input); cursor: pointer; transition: background 0.15s; }
 	.switch span { display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--muted); box-shadow: 0 1px 2px rgb(0 0 0 / 30%); transition: transform 0.15s; }
 	.switch.on { background: var(--brand); }

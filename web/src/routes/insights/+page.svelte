@@ -82,6 +82,26 @@
 		};
 	}
 
+	function askRemoveUnused() {
+		confirm = {
+			kind: 'unused',
+			title: `Remove ${unused.length} skills not used in 30 days? They move to Backups below, so each one can be restored.`,
+			lines: unused.map((c) => `Remove skill ${c.id} (${c.tool})`),
+			run: () =>
+				run(async () => {
+					let n = 0;
+					try {
+						for (const c of unused) {
+							await post('remove', { tool: c.tool, kind: 'skill', id: c.id });
+							n++;
+						}
+					} finally {
+						notice = `Removed ${n} unused skills. Restore any of them from Backups below.`;
+					}
+				})
+		};
+	}
+
 	async function askSwitch(name) {
 		error = '';
 		const diff = await post('insights/profiles/apply', { name, dryRun: true }).catch((e) => ((error = e.message), null));
@@ -178,6 +198,7 @@
 					<button class="primary" disabled={busy} onclick={askDisableUnused}>
 						Disable {unused.length} skills unused in 30 days
 					</button>
+					<button class="ghost" disabled={busy} onclick={askRemoveUnused}><Trash2 size={14} /> Remove them</button>
 					<span class="muted small">≈ {fmt(unusedTokens)} tokens saved per message</span>
 				</div>
 			{/if}
