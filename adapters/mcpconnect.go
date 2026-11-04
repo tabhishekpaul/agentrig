@@ -2,13 +2,16 @@ package adapters
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 )
 
 // MCPName is the key arig's own MCP server is registered under in each tool.
@@ -150,7 +153,30 @@ func mcpClients(e env, cp claudePaths, cmd string) []MCPClient {
 func SetMCP(tool, cmd string, on bool) error {
 	mu.Lock()
 	defer mu.Unlock()
+	// Claude Code rewrites ~/.claude.json constantly while it runs; let its own
+	// CLI make the change so the two writers can't lose each other's edits.
+	if tool == "claude" {
+		if bin, err := exec.LookPath("claude"); err == nil {
+			if slices.Contains(jsonKeys(defaultClaudePaths().MCPFile, []string{"mcpServers"}), MCPName) == on {
+				return nil // already as asked
+			}
+			return claudeCLI(bin, cmd, on)
+		}
+	}
 	return setMCP(realEnv(), defaultClaudePaths(), tool, cmd, on)
+}
+
+func claudeCLI(bin, cmd string, on bool) error {
+	args := []string{"mcp", "remove", "--scope", "user", MCPName}
+	if on {
+		args = []string{"mcp", "add", "--scope", "user", MCPName, "--", cmd, "mcp"}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if out, err := exec.CommandContext(ctx, bin, args...).CombinedOutput(); err != nil {
+		return fmt.Errorf("claude %s: %s", args[1], strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func setMCP(e env, cp claudePaths, tool, cmd string, on bool) error {

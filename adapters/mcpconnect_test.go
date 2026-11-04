@@ -106,3 +106,21 @@ func TestSetMCPRefusesJSONCAndTOML(t *testing.T) {
 		t.Fatal("wrote to an uninstalled tool")
 	}
 }
+
+func TestClaudeCLIArgs(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "args")
+	bin := filepath.Join(dir, "claude")
+	os.WriteFile(bin, []byte("#!/bin/sh\necho \"$@\" >> "+log+"\n"), 0o755)
+	if err := claudeCLI(bin, "/x/arig", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := claudeCLI(bin, "/x/arig", false); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(log)
+	want := "mcp add --scope user arig -- /x/arig mcp\nmcp remove --scope user arig\n"
+	if string(got) != want {
+		t.Fatalf("got %q", got)
+	}
+}
