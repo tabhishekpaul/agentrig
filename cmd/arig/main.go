@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/tabhishekpaul/agentrig"
+	"github.com/tabhishekpaul/agentrig/projects"
 )
 
 // version is set at release build time (-ldflags "-X main.version=v1.2.3").
@@ -20,6 +21,9 @@ it starts at login and runs in the background.
 Usage:
   arig              open the dashboard (starts the background server if needed)
   arig launch       same as arig
+  arig add <skill>...     pin skills to this project (.arig.json) and link them in
+  arig remove <skill>...  unpin skills from this project and unlink them
+  arig apply              link this project's .arig.json skills into every tool
   arig uninstall    stop the background server and stop starting it at login
   arig version      print the version
 `
@@ -45,6 +49,8 @@ func main() {
 			}
 			time.Sleep(3 * time.Second)
 		}
+	case "add", "remove", "apply":
+		projectCmd(cmd, os.Args[2:])
 	case "uninstall":
 		if err := removeService(); err != nil {
 			fail(err)
@@ -79,4 +85,35 @@ func open() {
 func fail(err error) {
 	fmt.Fprintln(os.Stderr, "arig:", err)
 	os.Exit(1)
+}
+
+// projectCmd edits the current folder's .arig.json, registers the folder as a
+// project, and links its skills into every tool.
+func projectCmd(cmd string, args []string) {
+	if cmd != "apply" && len(args) == 0 {
+		fmt.Fprintf(os.Stderr, "usage: arig %s <skill>...\n", cmd)
+		os.Exit(2)
+	}
+	dir, err := os.Getwd()
+	if err != nil {
+		fail(err)
+	}
+	if cmd != "apply" {
+		if _, err := projects.Edit(dir, cmd == "add", args...); err != nil {
+			fail(err)
+		}
+	}
+	if err := projects.Add(dir); err != nil {
+		fail(err)
+	}
+	links, err := projects.Apply(dir)
+	for _, l := range links {
+		fmt.Printf("  %-14s %-12s %s\n", l.State, l.Tool, l.Path)
+	}
+	if err != nil {
+		fail(err)
+	}
+	if len(links) == 0 {
+		fmt.Println("No skills pinned to this project. Add some with: arig add <skill>")
+	}
 }
