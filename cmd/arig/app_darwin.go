@@ -11,25 +11,37 @@ static void setDockIcon(const void *b, int n) {
 	if (img) [NSApp setApplicationIconImage:img];
 }
 
-// placeLights moves the close/minimize/zoom buttons to x, y (top-left of the
-// close button, from the window's top-left). AppKit puts them back on every
-// resize, so this runs again then.
+// placeLights puts the close/minimize/zoom buttons inset (x, y) from the
+// window's top-left: the title bar band grows to y+button+y so they sit
+// centred in it. AppKit lays the title bar out again on its own schedule, so
+// this re-runs whenever a button's frame changes.
+static BOOL placing = NO;
 static void placeLights(NSWindow *win, double x, double y) {
+	if (placing) return;
 	NSButton *close = [win standardWindowButton:NSWindowCloseButton];
 	NSButton *mini = [win standardWindowButton:NSWindowMiniaturizeButton];
 	NSButton *zoom = [win standardWindowButton:NSWindowZoomButton];
 	if (!close || !mini || !zoom) return;
-	NSView *bar = close.superview.superview;
-	NSRect r = bar.frame;
-	r.size.height = close.frame.size.height + y;
-	r.origin.y = win.frame.size.height - r.size.height;
-	bar.frame = r;
-	double gap = mini.frame.origin.x - close.frame.origin.x;
+	placing = YES;
+	NSView *bar = close.superview;        // NSTitlebarView
+	NSView *container = bar.superview;    // NSTitlebarContainerView
+	double h = close.frame.size.height;
+	double band = y + h + y;
+	NSRect r = container.frame;
+	r.size.height = band;
+	r.origin.y = container.superview.frame.size.height - band;
+	if (!NSEqualRects(container.frame, r)) container.frame = r;
+	if (!NSEqualRects(bar.frame, container.bounds)) bar.frame = container.bounds;
+	static double gap = 0; // native spacing, measured once before anything moves
+	if (gap <= 0) gap = mini.frame.origin.x - close.frame.origin.x;
+	if (gap <= 0) gap = 20;
 	NSArray *buttons = @[close, mini, zoom];
 	for (NSUInteger i = 0; i < buttons.count; i++) {
 		NSButton *b = buttons[i];
-		[b setFrameOrigin:NSMakePoint(x + i * gap, b.frame.origin.y)];
+		NSPoint want = NSMakePoint(x + i * gap, bar.isFlipped ? y : band - y - h);
+		if (!NSEqualPoints(b.frame.origin, want)) [b setFrameOrigin:want];
 	}
+	placing = NO;
 }
 
 // overlayTitlebar removes the title strip: the page fills the window and the
@@ -41,10 +53,19 @@ static void overlayTitlebar(void *w, double x, double y) {
 	win.styleMask |= NSWindowStyleMaskFullSizeContentView;
 	win.minSize = NSMakeSize(960, 600);
 	placeLights(win, x, y);
-	for (NSNotificationName n in @[NSWindowDidResizeNotification, NSWindowDidEndLiveResizeNotification,
-	                               NSWindowDidExitFullScreenNotification, NSWindowDidBecomeKeyNotification]) {
-		[[NSNotificationCenter defaultCenter] addObserverForName:n object:win queue:nil
-		                                              usingBlock:^(NSNotification *note) { placeLights(win, x, y); }];
+	void (^again)(NSNotification *) = ^(NSNotification *note) { placeLights(win, x, y); };
+	NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
+	// DidUpdate runs after every event the window handles: it catches the
+	// relayouts AppKit doesn't announce, and costs nothing when nothing moved.
+	for (NSNotificationName n in @[NSWindowDidUpdateNotification, NSWindowDidResizeNotification, NSWindowDidEndLiveResizeNotification,
+	                               NSWindowDidExitFullScreenNotification, NSWindowDidBecomeKeyNotification,
+	                               NSWindowDidResignKeyNotification]) {
+		[nc addObserverForName:n object:win queue:nil usingBlock:again];
+	}
+	for (NSWindowButton k = NSWindowCloseButton; k <= NSWindowZoomButton; k++) {
+		NSButton *b = [win standardWindowButton:k];
+		b.postsFrameChangedNotifications = YES;
+		[nc addObserverForName:NSViewFrameDidChangeNotification object:b queue:nil usingBlock:again];
 	}
 }
 
@@ -92,7 +113,7 @@ func window(url string) error {
 	w.SetTitle("Agentrig")
 	w.SetSize(1320, 860, webview.HintNone)
 	win := w.Window()
-	C.overlayTitlebar(win, 16, 14) // on their own strip at the top of the sidebar, above the name
+	C.overlayTitlebar(win, 18, 18) // in line with the logo and the sidebar icons (18 px), as far from the top
 	C.watchDrags(win)
 	_ = w.Bind("arigDragArea", func(on bool) { C.setDragArea(C.BOOL(on)) })
 	// The webview can't open new windows: send links that leave the dashboard

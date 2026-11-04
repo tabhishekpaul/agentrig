@@ -4,6 +4,9 @@
 	import { Bot, House, Library, FolderGit2, RefreshCw, Gauge, PenLine, Store, Eraser } from '@lucide/svelte';
 	import Logo from '../lib/Logo.svelte';
 	import ToolIcon from '../lib/ToolIcon.svelte';
+	import WindowLights from '../lib/WindowLights.svelte';
+	// Frameless Windows app window: we draw the window buttons (see cmd/arig/app.go).
+	const customChrome = typeof document !== 'undefined' && document.documentElement.classList.contains('app-custom');
 	import { store, load } from '../lib/tools.svelte.js';
 	let { children } = $props();
 	load();
@@ -51,6 +54,9 @@
 	</aside>
 	<main>
 		<div class="drag-strip" data-drag aria-hidden="true"></div>
+		{#if customChrome}
+			<div class="titlebar" data-drag><WindowLights /></div>
+		{/if}
 		{@render children()}
 	</main>
 </div>
@@ -60,7 +66,8 @@
 	aside { width: 248px; flex: none; display: flex; flex-direction: column; background: var(--chrome); border-inline-end: 1px solid var(--border); }
 	.brand-row { flex: none; display: flex; align-items: center; height: 56px; padding: 0 14px; border-bottom: 1px solid var(--border); }
 	/* in the macOS app the native window buttons get their own strip above the name */
-	:global(.app-mac) .brand-row { height: auto; padding: 42px 14px 14px; }
+	/* buttons sit 18px in from the left and top (cmd/arig/app_darwin.go), so the logo starts on the same line, below their 50px band */
+	:global(.app-mac) .brand-row { height: auto; padding: 50px 18px 14px; }
 	.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -0.02em; font-size: 15px; color: var(--foreground); text-decoration: none; }
 	nav { display: flex; flex-direction: column; gap: 1px; padding: 12px 8px; overflow-y: auto; }
 	.row { position: relative; display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border-radius: var(--radius); color: var(--foreground); text-decoration: none; font-size: 13px; transition: background 0.12s; }
@@ -75,5 +82,6 @@
 	/* macOS app: the top edge of every page moves the window, even pages without a header */
 	.drag-strip { display: none; }
 	:global(.app-mac) .drag-strip { display: block; position: absolute; top: 0; left: 0; right: 0; height: 16px; z-index: 50; }
+	.titlebar { flex: none; display: flex; justify-content: flex-end; align-items: center; height: 36px; padding: 0 8px; border-bottom: 1px solid var(--border); background: var(--chrome); }
 	main { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--background); overflow: hidden; }
 </style>
