@@ -82,6 +82,20 @@ func registerProjects(mux *http.ServeMux) {
 		}
 		writeJSON(w, map[string]string{"path": p})
 	})
+	// The system's choose-folder dialog: {path}, "" when cancelled.
+	mux.HandleFunc("POST /api/projects/pick", func(w http.ResponseWriter, r *http.Request) {
+		p, err := projects.PickFolder()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		writeJSON(w, map[string]string{"path": p})
+	})
+	// Likely projects from AI tool sessions, editors and git repos.
+	mux.HandleFunc("GET /api/projects/discover", func(w http.ResponseWriter, r *http.Request) {
+		home, _ := os.UserHomeDir()
+		writeJSON(w, projects.Discover(home))
+	})
 	mux.HandleFunc("DELETE /api/projects", func(w http.ResponseWriter, r *http.Request) {
 		if p, ok := project(w, r); ok {
 			if err := projects.Remove(p); err != nil {

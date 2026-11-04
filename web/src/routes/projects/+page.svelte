@@ -1,7 +1,7 @@
 <script>
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { Search, FolderPlus, ChevronLeft, ChevronRight, X, Link2, Trash2 } from '@lucide/svelte';
+	import { Search, FolderPlus, FolderOpen, ChevronLeft, ChevronRight, X, Link2, Trash2, Plus } from '@lucide/svelte';
 	import { api } from '../../lib/api.js';
 	import ToolIcon from '../../lib/ToolIcon.svelte';
 
@@ -39,18 +39,51 @@
 		links = (await api('projects/status' + q(path)).catch((e) => ((error = msg(e)), { links: [] }))).links;
 	}
 
-	async function addProject(e) {
-		e.preventDefault();
+	async function addPath(p, open = true) {
 		error = '';
 		try {
-			const r = await api('projects', json('POST', { path: newPath.trim() }));
-			newPath = '';
+			const r = await api('projects', json('POST', { path: p }));
 			await refreshList();
-			goto('/projects' + q(r.path));
+			suggested = suggested.map((c) => (c.path === r.path || c.path === p ? { ...c, added: true } : c));
+			if (open) goto('/projects' + q(r.path));
 		} catch (err) {
 			error = msg(err);
 		}
 	}
+	async function addProject(e) {
+		e.preventDefault();
+		await addPath(newPath.trim());
+		newPath = '';
+	}
+	// The system's own folder dialog (it opens on this computer, possibly behind the browser).
+	async function chooseFolder() {
+		busy = 'pick';
+		error = '';
+		try {
+			const r = await api('projects/pick', json('POST', {}));
+			if (r.path) await addPath(r.path);
+		} catch (err) {
+			error = msg(err);
+			showPaste = true;
+		}
+		busy = '';
+	}
+
+	// Likely projects: folders your AI tools ran in, your editors opened, git repos.
+	let suggested = $state(null);
+	let showPaste = $state(false);
+	let allSuggested = $state(false);
+	let sfind = $state('');
+	api('projects/discover').then((c) => (suggested = c)).catch(() => (suggested = []));
+	const candidates = $derived(
+		(suggested ?? []).filter((c) => !c.added && !list.includes(c.path) && (c.name + ' ' + c.path).toLowerCase().includes(sfind.toLowerCase()))
+	);
+	const ago = (t) => {
+		const ms = Date.now() - new Date(t);
+		if (!t || t.startsWith('0001') || ms < 0) return '';
+		const d = Math.floor(ms / 86400000);
+		return d === 0 ? 'today' : d === 1 ? 'yesterday' : d < 60 ? `${d} days ago` : `${Math.floor(d / 30)} months ago`;
+	};
 
 	async function forget() {
 		await api('projects' + q(path), { method: 'DELETE' }).catch((e) => (error = msg(e)));
@@ -111,10 +144,18 @@
 	</header>
 	<div class="body">
 		<p class="lead">Pin skills to a project. arig writes the list to <code>.arig.json</code> (commit it) and links each skill into every tool's project folder.</p>
-		<form onsubmit={addProject}>
-			<input placeholder="/Users/you/code/my-app" bind:value={newPath} spellcheck="false" autocomplete="off" aria-label="Project folder path" />
-			<button class="primary" disabled={!newPath.trim()}><FolderPlus size={15} /> Add project</button>
-		</form>
+		<div class="actions">
+			<button class="primary" disabled={busy === 'pick'} onclick={chooseFolder}>
+				<FolderOpen size={15} /> {busy === 'pick' ? 'Waiting for the folder dialog…' : 'Choose folder…'}
+			</button>
+			{#if !showPaste}<button class="link" onclick={() => (showPaste = true)}>or paste a path</button>{/if}
+		</div>
+		{#if showPaste}
+			<form onsubmit={addProject}>
+				<input placeholder="/Users/you/code/my-app" bind:value={newPath} spellcheck="false" autocomplete="off" aria-label="Project folder path" />
+				<button class="ghost" disabled={!newPath.trim()}><FolderPlus size={15} /> Add</button>
+			</form>
+		{/if}
 		{#if error}<p class="err">{error}</p>{/if}
 		<ul class="rows">
 			{#each list as p (p)}
@@ -125,9 +166,38 @@
 					</a>
 				</li>
 			{:else}
-				<li class="empty muted">No projects yet. Paste a folder path above, or run <code>arig add &lt;skill&gt;</code> inside one.</li>
+				<li class="empty muted">No projects yet. Choose a folder, pick one of the suggestions below, or run <code>arig add &lt;skill&gt;</code> inside one.</li>
 			{/each}
 		</ul>
+
+		<div class="sugg-head">
+			<div>
+				<span class="label-mono">suggested</span>
+				<p class="muted small">Folders your AI tools worked in, your editors opened, and git repos in your code folders.</p>
+			</div>
+			{#if (suggested ?? []).length > 8}
+				<label class="filter"><Search size={13} /><input placeholder="Filter" bind:value={sfind} aria-label="Filter suggestions" /></label>
+			{/if}
+		</div>
+		<ul class="rows">
+			{#each allSuggested || sfind ? candidates : candidates.slice(0, 8) as c (c.path)}
+				<li>
+					<div class="sugg">
+						<div class="who"><strong>{c.name}</strong><span class="mono">{c.path}</span></div>
+						<div class="chips">
+							{#each c.sources as s}<span class="chip">{s}</span>{/each}
+							{#if ago(c.lastActive)}<span class="when">active {ago(c.lastActive)}</span>{/if}
+						</div>
+					</div>
+					<button class="ghost sm" onclick={() => addPath(c.path, false)}><Plus size={14} /> Add</button>
+				</li>
+			{:else}
+				<li class="empty muted">{suggested === null ? 'Looking for projects…' : 'No other projects found.'}</li>
+			{/each}
+		</ul>
+		{#if !allSuggested && !sfind && candidates.length > 8}
+			<button class="link more" onclick={() => (allSuggested = true)}>Show all {candidates.length} suggestions</button>
+		{/if}
 	</div>
 {:else}
 	<header>
@@ -205,6 +275,21 @@
 	.heading { margin: 24px 0 10px; }
 	.heading:first-of-type { margin-top: 0; }
 	.heading span { color: var(--faint); margin-left: 4px; }
+	.actions { display: flex; align-items: center; gap: 16px; }
+	.link { height: auto; padding: 0; background: none; border: 0; color: var(--muted); font-size: 13px; font-weight: 400; text-decoration: underline; text-underline-offset: 3px; }
+	.link:hover { color: var(--foreground); }
+	.actions + form { margin-top: 12px; }
+	.sugg-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-top: 40px; }
+	.sugg-head p { margin: 4px 0 0; }
+	.small { font-size: 12.5px; }
+	.filter { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: var(--radius); background: var(--hover); color: var(--muted); }
+	.filter input { width: 160px; border: 0; background: none; outline: none; font-size: 13px; color: var(--foreground); }
+	.sugg { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 12px 16px; }
+	.chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+	.chip { font-family: var(--mono); font-size: 10.5px; padding: 1px 6px; border: 1px solid var(--input); border-radius: var(--radius); color: var(--muted); }
+	.when { font-size: 11.5px; color: var(--faint); }
+	.rows li > .sm { margin-right: 16px; }
+	.more { margin-top: 12px; }
 	form { display: flex; gap: 8px; }
 	form input { flex: 1; min-width: 0; height: 40px; padding: 0 12px; border-radius: var(--radius); border: 1px solid var(--input); background: var(--hover); font-family: var(--mono); font-size: 13px; outline: none; }
 	form input:focus { border-color: var(--brand-line); }
