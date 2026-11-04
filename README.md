@@ -45,6 +45,14 @@ Every skill you switch on is loaded into each session, so keep only the few you 
 
 Open **AI access** in the dashboard to add or remove it in each tool with one click. arig only touches its own `arig` entry and keeps every other key; for config files with comments (JSONC) and for Codex (TOML) it shows a snippet to paste instead.
 
+## Marketplace: search and install from skills.sh
+
+The **Marketplace** page searches the [skills.sh](https://skills.sh) registry directly (most installed first), with category shortcuts and suggestions for a project folder: arig reads file names and `package.json` locally and only sends the search words. It is the one page that needs the internet.
+
+- **Before you install**, arig downloads the skill and shows its description, every file with its size, and safety flags it works out from the files themselves: `scripts`, `network` (scripts that reach the internet), `shell-pipe` (`curl … | sh`, `iex`), `binary` and `large`. A flagged skill only installs after you confirm.
+- **Installing** writes the files into the skills folder of each tool you pick. Every path is checked to stay inside that folder, `.env` and `.git` files are skipped, size is capped, and nothing downloaded is ever run by arig. Installs are recorded in `lock.json` with the skills.sh version hash, and uninstall removes exactly what was put down.
+- **Updates** are found by comparing that hash with the current one (when you open the page, and once a day). arig never updates on its own: **Review update** shows a diff of every changed file, then you choose.
+
 ## Sync between machines
 
 Open **Sync** in the dashboard. arig checks which git accounts this computer is signed in to through the GitHub CLI (`gh`) or GitLab CLI (`glab`) and looks for a repo called `arig-sync`. If it exists, pick **Use this repo**; if not, arig offers to create it as a private repo, and only does so after you confirm. Any other git host works too: create an empty private repo and paste its URL. Do the same on your other machines. arig then syncs every 15 minutes while it runs, or whenever you press **Sync now**.

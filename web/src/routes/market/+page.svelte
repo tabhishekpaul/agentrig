@@ -1,16 +1,16 @@
 <script>
-	import { Search, RefreshCw, Star, ExternalLink, TriangleAlert, Check, X, ArrowUpCircle, FolderSearch } from '@lucide/svelte';
+	import { Search, Download, ExternalLink, TriangleAlert, Check, X, ArrowUpCircle, FolderSearch } from '@lucide/svelte';
 	import { api } from '../../lib/api.js';
 	import { load } from '../../lib/tools.svelte.js';
 	import ToolIcon from '../../lib/ToolIcon.svelte';
 
-	// Plain-language meaning of the index's safety flags.
+	// Plain-language meaning of the safety flags arig computes from a skill's files.
 	const FLAGS = {
 		scripts: 'Includes scripts your AI tool may run on your computer.',
-		network: 'Contains code or instructions that reach the internet.',
+		network: 'Its scripts reach the internet.',
 		'shell-pipe': 'Downloads something and pipes it straight into a shell (curl … | sh).',
-		binary: 'Ships compiled files that can’t be read or reviewed as text.',
-		large: 'A large download.'
+		binary: 'Ships compiled or binary files that can’t be read or reviewed as text.',
+		large: 'Over 1 MB of files.'
 	};
 
 	let info = $state(null);
@@ -19,18 +19,16 @@
 	let tab = $state('browse');
 
 	let q = $state('');
-	let cat = $state('');
-	let sort = $state(''); // '' = best match when searching, else most installed
-	let list = $state({ total: 0, skills: [] });
-	let sel = $state(null);
-	let confirm = $state(null); // { ids, flags, label } awaiting "install anyway"
+	let cat = $state(''); // '' = popular
+	let list = $state(null);
+	let sel = $state(null); // a row, plus its detail once fetched
+	let confirm = $state(null); // { id, flags } awaiting "install anyway"
 	let chosen = $state([]);
 
 	let project = $state('');
 	let recs = $state(null);
-	let review = $state(null); // { id, name, diff, entry }
+	let review = $state(null); // { id, name, from, to, diff, flags }
 
-	const missing = $derived(info && !info.total);
 	const installedIds = $derived(Object.keys(info?.installed ?? {}));
 
 	async function refreshInfo() {
@@ -44,18 +42,34 @@
 
 	let seq = 0;
 	async function query() {
+		const term = q.trim();
+		if (term.length === 1) return;
 		const n = ++seq;
-		const p = new URLSearchParams({ q, cat, sort, limit: '100' });
-		const r = await api('market/skills?' + p).catch((e) => ((error = e.message), null));
-		if (r && n === seq) list = r;
+		list = null;
+		const p = new URLSearchParams(term ? { q: term } : cat ? { cat } : {});
+		const r = await api('market/skills?' + p).catch((e) => ((error = e.message.replace(/^\d+ /, '')), { skills: [] }));
+		if (n === seq) list = r;
 	}
 
-	refreshInfo().then(query);
+	refreshInfo();
+	// update check: cheap after the first time (downloads are cached for a few minutes)
+	api('market/updates').then(refreshInfo).catch(() => {});
 	$effect(() => {
-		q, cat, sort;
-		const t = setTimeout(query, 150);
+		q, cat;
+		const t = setTimeout(query, 300);
 		return () => clearTimeout(t);
 	});
+
+	async function select(e) {
+		sel = e;
+		confirm = null;
+		try {
+			const d = await api('market/skill?' + new URLSearchParams({ id: e.id }));
+			if (sel?.id === e.id) sel = { ...sel, ...d, loaded: true };
+		} catch (err) {
+			if (sel?.id === e.id) sel = { ...sel, loaded: true, failed: err.message.replace(/^\d+ /, '') };
+		}
+	}
 
 	async function post(path, body) {
 		return api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -71,19 +85,25 @@
 		}
 		busy = '';
 		await refreshInfo();
-		query();
 	}
 
-	function install(ids, flags, label, accept = false) {
+	const mark = (id, installed) => {
+		const set = (r) => (r.id === id ? { ...r, installed } : r);
+		if (list) list = { ...list, skills: list.skills.map(set) };
+		if (recs) recs = { ...recs, recs: recs.recs.map(set) };
+		if (sel?.id === id) sel = { ...sel, installed };
+	};
+
+	function install(id, flags, accept = false) {
 		if (flags.length && !accept) {
-			confirm = { ids, flags, label };
+			confirm = { id, flags };
 			return;
 		}
 		confirm = null;
 		run('install', async () => {
-			await post('market/install', { ids, tools: chosen, accept });
+			await post('market/install', { id, tools: chosen, accept });
 			load();
-			if (sel && ids.includes(sel.id)) sel = { ...sel, installed: true };
+			mark(id, true);
 		});
 	}
 
@@ -91,10 +111,8 @@
 		run('uninstall', async () => {
 			await post('market/uninstall', { id });
 			load();
-			if (sel?.id === id) sel = { ...sel, installed: false };
+			mark(id, false);
 		});
-
-	const refresh = () => run('refresh', () => post('market/refresh', {}));
 
 	const recommend = () =>
 		run('recommend', async () => {
@@ -113,11 +131,10 @@
 			load();
 		});
 
-	const short = (ref) => (ref ?? '').slice(0, 7);
+	const short = (h) => (h ?? '').slice(0, 7);
 	const date = (t) => (t ? new Date(t).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—');
-	const stars = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n ?? 0));
-	const repoUrl = (e) => `https://github.com/${e.repo}/tree/${e.ref}/${e.dir ?? ''}`;
-	const union = (items) => [...new Set(items.flatMap((i) => i.flags ?? []))];
+	const num = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n ?? 0));
+	const size = (b) => (b >= 1 << 20 ? (b / (1 << 20)).toFixed(1) + ' MB' : b >= 1024 ? (b / 1024).toFixed(1) + ' KB' : b + ' B');
 	const isWin = typeof navigator !== 'undefined' && /Win/.test(navigator.platform);
 </script>
 
@@ -132,197 +149,152 @@
 
 <header>
 	<div class="title">
-		<span class="label-mono">skills from the community</span>
+		<span class="label-mono">skills from skills.sh</span>
 		<h1>Marketplace</h1>
 	</div>
 	<label class="search">
 		<Search size={15} />
-		<input placeholder="Search {info?.total ?? ''} skills" bind:value={q} oninput={() => (tab = 'browse')} />
+		<input placeholder="Search skills.sh" bind:value={q} oninput={() => (tab = 'browse')} />
 	</label>
-	<button class="ghost icon" onclick={refresh} disabled={!!busy} title="Check for a new index">
-		<span class:spin={busy === 'refresh'}><RefreshCw size={15} /></span>
-	</button>
 </header>
 
 <div class="bar">
 	<div class="tabs" role="tablist">
-		{#each [['browse', 'Browse'], ['recs', 'For you'], ['packs', 'Packs'], ['installed', 'Installed']] as [id, label]}
+		{#each [['browse', 'Browse'], ['recs', 'For you'], ['installed', 'Installed']] as [id, label]}
 			<button role="tab" aria-selected={tab === id} class:active={tab === id} onclick={() => (tab = id)}>
 				{label}
 				{#if id === 'installed'}<span class="tabular">{installedIds.length}</span>{/if}
-				{#if id === 'packs'}<span class="tabular">{info?.packs?.length ?? 0}</span>{/if}
 			</button>
 		{/each}
 	</div>
 	<span class="hint">
-		{#if info?.updates?.length}<button class="link" onclick={() => (tab = 'installed')}>{info.updates.length} update{info.updates.length > 1 ? 's' : ''} available</button> ·
-		{/if}
-		{#if info?.status?.state === 'offline'}offline, showing the saved index{:else if info?.generated && info.total}index of {date(info.generated)}{/if}
+		{#if info?.updates?.length}<button class="link" onclick={() => (tab = 'installed')}>{info.updates.length} update{info.updates.length > 1 ? 's' : ''} available</button>{/if}
 	</span>
 </div>
 
 {#if error}<p class="err">{error}</p>{/if}
 
-{#if missing}
-	<div class="empty">
-		<p class="big">The marketplace index isn’t published yet.</p>
-		<p class="muted">
-			{info.status?.state === 'offline' ? 'arig couldn’t reach the internet.' : info.status?.state === 'error' ? info.status.error : 'Check back soon.'}
-			arig checks once a day; you can also check now.
-		</p>
-		<button class="ghost" onclick={refresh} disabled={!!busy}><RefreshCw size={15} /> Check now</button>
-	</div>
-{:else}
-	<div class="split">
-		{#if tab === 'browse'}
-			<nav class="cats">
-				<button class:on={cat === ''} onclick={() => (cat = '')}>All <span>{info?.total ?? ''}</span></button>
-				{#each info?.categories ?? [] as c}
-					{#if info.counts[c.id]}
-						<button class:on={cat === c.id} onclick={() => (cat = c.id)}>{c.name} <span>{info.counts[c.id]}</span></button>
-						{#if cat === c.id || cat.startsWith(c.id + '/')}
-							{#each c.subs ?? [] as s}
-								{#if info.counts[c.id + '/' + s]}
-									<button class="sub" class:on={cat === c.id + '/' + s} onclick={() => (cat = c.id + '/' + s)}>{s} <span>{info.counts[c.id + '/' + s]}</span></button>
-								{/if}
-							{/each}
-						{/if}
-					{/if}
-				{/each}
-			</nav>
-			<section class="list">
-				<div class="listbar">
-					<span class="muted tabular">{list.total} skills</span>
-					<select bind:value={sort}>
-						<option value="">{q.trim() ? 'Best match' : 'Most installed'}</option>
-						{#if q.trim()}<option value="installs">Most installed</option>{/if}
-						<option value="stars">Most stars</option>
-						<option value="updated">Recently updated</option>
-					</select>
-				</div>
-				<ul>
-					{#each list.skills as e (e.id)}
-						{@render row(e)}
-					{:else}
-						<li class="none muted">{info ? 'Nothing matches.' : 'Loading…'}</li>
+<div class="split">
+	{#if tab === 'browse'}
+		<nav class="cats">
+			<button class:on={!q.trim() && cat === ''} onclick={() => ((q = ''), (cat = ''))}>Popular</button>
+			{#each (info?.categories ?? []).filter((c) => c.subs?.length) as c}
+				<button class:on={!q.trim() && cat === c.id} onclick={() => ((q = ''), (cat = c.id))}>{c.name}</button>
+				{#if cat === c.id || cat.startsWith(c.id + '/')}
+					{#each c.subs as s}
+						<button class="sub" class:on={!q.trim() && cat === c.id + '/' + s} onclick={() => ((q = ''), (cat = c.id + '/' + s))}>{s}</button>
 					{/each}
-				</ul>
-			</section>
-		{:else if tab === 'recs'}
-			<section class="list wide">
-				<form class="scan" onsubmit={(e) => (e.preventDefault(), recommend())}>
-					<FolderSearch size={16} />
-					<input placeholder="Project folder (optional), e.g. /Users/you/code/app" bind:value={project} spellcheck="false" />
-					<button class="primary" disabled={!!busy}>{busy === 'recommend' ? 'Looking…' : 'Suggest skills'}</button>
-				</form>
-				<p class="hint pad">Runs on this computer only: arig reads file names and package.json in that folder, nothing is sent anywhere.</p>
-				{#if recs}
-					<div class="group label-mono">suggested</div>
-					<ul>
-						{#each recs.recs ?? [] as e (e.id)}{@render row(e, e.reasons)}{:else}<li class="none muted">No suggestions yet. Try a project folder.</li>{/each}
-					</ul>
-					{#if recs.pairs?.length}
-						<div class="group label-mono">pairs well with what you have</div>
-						<ul>{#each recs.pairs as e (e.id)}{@render row(e, e.reasons)}{/each}</ul>
-					{/if}
 				{/if}
-			</section>
-		{:else if tab === 'packs'}
-			<section class="list wide">
-				{#each info?.packs ?? [] as p (p.id)}
-					{@const flags = union(p.items)}
-					{@const todo = p.items.filter((i) => !i.installed)}
-					<div class="pack">
-						<div class="packhead">
-							<div>
-								<strong>{p.name}</strong>
-								{#if p.description}<p class="muted">{p.description}</p>{/if}
-							</div>
-							<button class="primary" disabled={!!busy || !todo.length || !chosen.length} onclick={() => install(todo.map((i) => i.id), union(todo), p.name)}>
-								{todo.length ? `Install ${todo.length} skill${todo.length > 1 ? 's' : ''}` : 'Installed'}
-							</button>
-						</div>
-						{#if confirm?.label === p.name}{@render confirmBox()}{/if}
-						<div class="chips">
-							{#each p.items as i}<button class="chip" class:inst={i.installed} onclick={() => (sel = i)}>{#if i.installed}<Check size={11} />{/if}{i.name}</button>{/each}
-							{#if flags.length}<span class="flagnote"><TriangleAlert size={12} /> {flags.join(', ')}</span>{/if}
-						</div>
-					</div>
+			{/each}
+		</nav>
+		<section class="list">
+			<div class="listbar">
+				<span class="muted tabular">{list ? `${list.skills.length} skills` : 'Searching…'}</span>
+				<span class="hint">most installed first</span>
+			</div>
+			<ul>
+				{#each list?.skills ?? [] as e (e.id)}
+					{@render row(e)}
 				{:else}
-					<p class="none muted">No packs in the index yet.</p>
+					{#if list}<li class="none muted">{q.trim().length === 1 ? 'Type at least 2 characters.' : 'Nothing matches.'}</li>{/if}
 				{/each}
-				{#if info?.packs?.length}{@render tools()}{/if}
-			</section>
-		{:else}
-			<section class="list wide">
-				{#if info?.updates?.length}
-					<div class="group label-mono">updates</div>
-					<ul>
-						{#each info.updates as u (u.id)}
-							<li>
-								<div class="body">
-									<div class="name">{u.name} <code class="meta">{short(u.from)} → {short(u.to)}</code></div>
-									<p class="src">{u.id}</p>
-								</div>
-								<button class="ghost sm" disabled={!!busy} onclick={() => openReview(u)}>{busy === 'review:' + u.id ? 'Fetching…' : 'Review update'}</button>
-							</li>
-						{/each}
-					</ul>
-				{/if}
-				<div class="group label-mono">installed from the marketplace</div>
+			</ul>
+		</section>
+	{:else if tab === 'recs'}
+		<section class="list wide">
+			<form class="scan" onsubmit={(e) => (e.preventDefault(), recommend())}>
+				<FolderSearch size={16} />
+				<input placeholder="Project folder (optional), e.g. /Users/you/code/app" bind:value={project} spellcheck="false" />
+				<button class="primary" disabled={!!busy}>{busy === 'recommend' ? 'Looking…' : 'Suggest skills'}</button>
+			</form>
+			<p class="hint pad">arig reads file names and package.json in that folder on this computer, then searches skills.sh for the stack it finds. Only the search words leave your machine.</p>
+			{#if recs}
+				<div class="group label-mono">suggested</div>
 				<ul>
-					{#each Object.entries(info?.installed ?? {}) as [id, l] (id)}
+					{#each recs.recs ?? [] as e (e.id)}{@render row(e, e.reasons)}{:else}<li class="none muted">No suggestions yet. Try a project folder.</li>{/each}
+				</ul>
+			{/if}
+		</section>
+	{:else}
+		<section class="list wide">
+			{#if info?.updates?.length}
+				<div class="group label-mono">updates</div>
+				<ul>
+					{#each info.updates as u (u.id)}
 						<li>
 							<div class="body">
-								<div class="name">{l.name} <code class="meta">{short(l.ref)}</code>
-									{#each l.tools as t}<span class="tool"><ToolIcon id={t} size={12} /></span>{/each}
-								</div>
-								<p class="src">{id} · installed {date(l.installedAt)}</p>
+								<div class="name">{u.name} <code class="meta">{short(u.from)} → {short(u.to)}</code></div>
+								<p class="src">{u.id}</p>
 							</div>
-							<button class="ghost sm" disabled={!!busy} onclick={() => uninstall(id)}>Uninstall</button>
+							<button class="ghost sm" disabled={!!busy} onclick={() => openReview(u)}>{busy === 'review:' + u.id ? 'Fetching…' : 'Review update'}</button>
 						</li>
-					{:else}
-						<li class="none muted">Nothing installed from the marketplace yet.</li>
 					{/each}
 				</ul>
-			</section>
-		{/if}
-
-		{#if sel && tab !== 'installed'}
-			<aside class="detail">
-				<button class="close" onclick={() => ((sel = null), (confirm = null))} aria-label="Close"><X size={16} /></button>
-				<span class="label-mono">{sel.category}</span>
-				<h2>{sel.name} {#if sel.installed}<span class="badge"><Check size={11} /> installed</span>{/if}</h2>
-				{#if sel.description}<p class="desc">{sel.description}</p>{/if}
-				<div class="facts">
-					<span><Star size={13} /> {stars(sel.stars)}</span>
-					{#if sel.installs}<span>{stars(sel.installs)} installs</span>{/if}
-					<span>updated {date(sel.updated)}</span>
-					<span class="mono">{short(sel.ref)}</span>
-				</div>
-				<a class="repo" href={repoUrl(sel)} target="_blank" rel="noreferrer">{sel.repo}{sel.dir ? '/' + sel.dir : ''} <ExternalLink size={12} /></a>
-				{#if sel.flags?.length}
-					<div class="flags">
-						{#each sel.flags as f}
-							<div class="flag"><TriangleAlert size={14} /><div><b>{f}</b><span>{FLAGS[f] ?? 'Flagged by the marketplace scan.'}</span></div></div>
-						{/each}
-					</div>
-				{/if}
-				{#if sel.installed}
-					<button class="ghost" disabled={!!busy} onclick={() => uninstall(sel.id)}>{busy === 'uninstall' ? 'Removing…' : 'Uninstall'}</button>
+			{/if}
+			<div class="group label-mono">installed from the marketplace</div>
+			<ul>
+				{#each Object.entries(info?.installed ?? {}) as [id, l] (id)}
+					<li>
+						<div class="body">
+							<div class="name">{l.name} <code class="meta">{short(l.hash)}</code>
+								{#each l.tools as t}<span class="tool"><ToolIcon id={t} size={12} /></span>{/each}
+							</div>
+							<p class="src">{id} · installed {date(l.installedAt)}</p>
+						</div>
+						<button class="ghost sm" disabled={!!busy} onclick={() => uninstall(id)}>Uninstall</button>
+					</li>
 				{:else}
-					{@render tools()}
-					{#if confirm?.label === sel.id}{@render confirmBox()}{:else}
-						<button class="primary" disabled={!!busy || !chosen.length} onclick={() => install([sel.id], sel.flags ?? [], sel.id)}>
-							{busy === 'install' ? 'Installing…' : 'Install'}
-						</button>
-					{/if}
-					<p class="hint">Downloads this exact commit. Nothing in it is run by arig.</p>
+					<li class="none muted">Nothing installed from the marketplace yet.</li>
+				{/each}
+			</ul>
+		</section>
+	{/if}
+
+	{#if sel && tab !== 'installed'}
+		<aside class="detail">
+			<button class="close" onclick={() => ((sel = null), (confirm = null))} aria-label="Close"><X size={16} /></button>
+			<span class="label-mono">{sel.category}</span>
+			<h2>{sel.name} {#if sel.installed}<span class="badge"><Check size={11} /> installed</span>{/if}</h2>
+			{#if !sel.loaded}
+				<p class="muted">Fetching the skill…</p>
+			{:else if sel.failed}
+				<p class="err flat">{sel.failed}</p>
+			{:else if sel.description}
+				<p class="desc">{sel.description}</p>
+			{/if}
+			<div class="facts">
+				<span><Download size={13} /> {num(sel.installs)} installs</span>
+				{#if sel.hash}<span class="mono">{short(sel.hash)}</span>{/if}
+			</div>
+			<a class="repo" href={sel.page ?? `https://skills.sh/${sel.id}`} target="_blank" rel="noreferrer">skills.sh/{sel.id} <ExternalLink size={12} /></a>
+			<a class="repo" href={sel.repo ?? `https://github.com/${sel.source}`} target="_blank" rel="noreferrer">github.com/{sel.source} <ExternalLink size={12} /></a>
+			{#if sel.flags?.length}
+				<div class="flags">
+					{#each sel.flags as f}
+						<div class="flag"><TriangleAlert size={14} /><div><b>{f}</b><span>{FLAGS[f] ?? ''}</span></div></div>
+					{/each}
+				</div>
+			{/if}
+			{#if sel.files?.length}
+				<details class="files">
+					<summary class="k">{sel.files.length} file{sel.files.length > 1 ? 's' : ''} · {size(sel.files.reduce((a, f) => a + f.size, 0))}</summary>
+					<ul>{#each sel.files as f}<li><span>{f.path}</span><span class="tabular">{size(f.size)}</span></li>{/each}</ul>
+				</details>
+			{/if}
+			{#if sel.installed}
+				<button class="ghost" disabled={!!busy} onclick={() => uninstall(sel.id)}>{busy === 'uninstall' ? 'Removing…' : 'Uninstall'}</button>
+			{:else if sel.loaded && !sel.failed}
+				{@render tools()}
+				{#if confirm?.id === sel.id}{@render confirmBox()}{:else}
+					<button class="primary" disabled={!!busy || !chosen.length} onclick={() => install(sel.id, sel.flags ?? [])}>
+						{busy === 'install' ? 'Installing…' : 'Install'}
+					</button>
 				{/if}
-			</aside>
-		{/if}
-	</div>
-{/if}
+				<p class="hint">Copies these files into your tools. Nothing in them is run by arig.</p>
+			{/if}
+		</aside>
+	{/if}
+</div>
 
 {#if review}
 	<div class="overlay" role="presentation" onclick={(e) => e.target === e.currentTarget && (review = null)}>
@@ -334,15 +306,15 @@
 				</div>
 				<button class="close" onclick={() => (review = null)} aria-label="Close"><X size={16} /></button>
 			</div>
-			{#if review.entry?.flags?.length}
+			{#if review.flags?.length}
 				<div class="flags">
-					{#each review.entry.flags as f}<div class="flag"><TriangleAlert size={14} /><div><b>{f}</b><span>{FLAGS[f] ?? ''}</span></div></div>{/each}
+					{#each review.flags as f}<div class="flag"><TriangleAlert size={14} /><div><b>{f}</b><span>{FLAGS[f] ?? ''}</span></div></div>{/each}
 				</div>
 			{/if}
 			<pre class="diff">{#each (review.diff || 'No file changes.').split('\n') as l}<span class:add={l[0] === '+' && !l.startsWith('+++')} class:del={l[0] === '-' && !l.startsWith('---')} class:hunk={l.startsWith('@@') || l.startsWith('---') || l.startsWith('+++')}>{l}
 </span>{/each}</pre>
 			<div class="actions">
-				<button class="primary" disabled={!!busy} onclick={() => applyUpdate(!!review.entry?.flags?.length)}>{busy === 'update' ? 'Updating…' : 'Update'}</button>
+				<button class="primary" disabled={!!busy} onclick={() => applyUpdate(!!review.flags?.length)}>{busy === 'update' ? 'Updating…' : 'Update'}</button>
 				<button class="ghost" onclick={() => (review = null)}>Not now</button>
 			</div>
 		</div>
@@ -351,17 +323,16 @@
 
 {#snippet row(e, reasons)}
 	<li class:picked={sel?.id === e.id}>
-		<button class="rowbtn" onclick={() => ((sel = e), (confirm = null))}>
+		<button class="rowbtn" onclick={() => select(e)}>
 			<div class="body">
 				<div class="name">
 					<span>{e.name}</span>
+					<span class="cat">{e.category}</span>
 					{#if e.installed}<span class="badge"><Check size={11} /> installed</span>{/if}
-					{#if e.flags?.length}<span class="warn" title={e.flags.join(', ')}><TriangleAlert size={12} /></span>{/if}
 				</div>
-				{#if e.description}<p>{e.description}</p>{/if}
-				{#if reasons?.length}<p class="why">{reasons.join(' · ')}</p>{:else}<p class="src">{e.repo}</p>{/if}
+				{#if reasons?.length}<p class="why">{reasons.join(' · ')}</p>{:else}<p class="src">{e.source}</p>{/if}
 			</div>
-			<span class="stars tabular"><Star size={12} /> {stars(e.stars)}</span>
+			<span class="stars tabular" title="installs"><Download size={12} /> {num(e.installs)}</span>
 		</button>
 	</li>
 {/snippet}
@@ -380,9 +351,9 @@
 {#snippet confirmBox()}
 	<div class="confirm">
 		<p><b>Before you install:</b></p>
-		<ul>{#each confirm.flags as f}<li><b>{f}</b>: {FLAGS[f] ?? 'flagged by the marketplace scan.'}</li>{/each}</ul>
+		<ul>{#each confirm.flags as f}<li><b>{f}</b>: {FLAGS[f] ?? ''}</li>{/each}</ul>
 		<div class="row">
-			<button class="primary" onclick={() => install(confirm.ids, confirm.flags, confirm.label, true)}>Install anyway</button>
+			<button class="primary" onclick={() => install(confirm.id, confirm.flags, true)}>Install anyway</button>
 			<button class="ghost" onclick={() => (confirm = null)}>Cancel</button>
 		</div>
 	</div>
@@ -412,9 +383,7 @@
 	.hint.pad { padding: 0 24px 8px; }
 	.link { border: 0; background: none; padding: 0; font: inherit; color: var(--brand-text); cursor: pointer; }
 	.err { margin: 12px 24px 0; padding: 10px 12px; font-size: 13px; color: var(--brand-text); background: var(--brand-tint); border-left: 2px solid var(--brand); white-space: pre-wrap; word-break: break-word; }
-	.empty { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 80px 24px; text-align: center; }
-	.empty .big { font-size: 16px; font-weight: 500; margin: 0; }
-	.empty p { margin: 0 0 12px; font-size: 13px; max-width: 420px; }
+	.err.flat { margin: 0; }
 
 	.split { flex: 1; min-height: 0; display: flex; }
 	.cats { width: 196px; flex: none; display: flex; flex-direction: column; gap: 1px; padding: 12px 8px; border-inline-end: 1px solid var(--border); overflow-y: auto; }
@@ -425,7 +394,6 @@
 	.cats span { font-family: var(--mono); font-size: 11px; color: var(--faint); font-weight: 400; }
 	.list { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow-y: auto; }
 	.listbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 24px; font-size: 12px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--background); z-index: 1; }
-	select { height: 28px; padding: 0 8px; border-radius: var(--radius); border: 1px solid var(--input); background: var(--hover); color: var(--foreground); font: inherit; font-size: 12px; }
 	ul { list-style: none; margin: 0; padding: 0; }
 	li { border-bottom: 1px solid var(--border); }
 	li:not(:has(.rowbtn)) { display: flex; align-items: center; gap: 16px; padding: 12px 24px; }
@@ -442,7 +410,7 @@
 	.tool { display: inline-flex; }
 	.stars { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 11.5px; color: var(--muted); flex: none; }
 	.badge { display: inline-flex; align-items: center; gap: 3px; font-family: var(--mono); font-size: 10.5px; font-weight: 400; color: var(--ok); }
-	.warn { display: inline-flex; color: #e0a33a; }
+	.cat { font-family: var(--mono); font-size: 10.5px; font-weight: 400; color: var(--faint); }
 	.none { padding: 40px 24px; text-align: center; font-size: 13px; border: 0; justify-content: center; }
 	.group { padding: 18px 24px 8px; }
 
@@ -451,15 +419,6 @@
 	.scan input { flex: 1; min-width: 0; height: 36px; padding: 0 12px; border-radius: var(--radius); border: 1px solid var(--input); background: var(--hover); font-family: var(--mono); font-size: 12.5px; outline: none; color: var(--foreground); }
 	.scan input:focus { border-color: var(--brand-line); }
 
-	.pack { padding: 16px 24px; border-bottom: 1px solid var(--border); }
-	.packhead { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-	.packhead strong { font-weight: 500; font-size: 14px; }
-	.packhead p { margin: 3px 0 0; font-size: 12.5px; }
-	.chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
-	.chip { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: 1px solid var(--input); border-radius: var(--radius); background: none; font-family: var(--mono); font-size: 11px; color: var(--muted); cursor: pointer; }
-	.chip:hover { color: var(--foreground); }
-	.chip.inst { color: var(--ok); }
-	.flagnote { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 11px; color: #e0a33a; }
 
 	.detail { position: relative; width: 360px; flex: none; display: flex; flex-direction: column; gap: 12px; padding: 20px; border-inline-start: 1px solid var(--border); background: var(--card); overflow-y: auto; }
 	.close { position: absolute; top: 14px; right: 14px; display: inline-flex; border: 0; background: none; color: var(--muted); cursor: pointer; padding: 4px; }
@@ -475,6 +434,10 @@
 	.flag :global(svg) { flex: none; color: #e0a33a; margin-top: 2px; }
 	.flag div { display: flex; flex-direction: column; gap: 2px; }
 	.flag b { font-family: var(--mono); font-size: 11px; font-weight: 500; color: #e0a33a; }
+	.files summary { cursor: pointer; }
+	.files ul { margin-top: 6px; max-height: 220px; overflow-y: auto; }
+	.files li { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+	.files li span:first-child { word-break: break-all; }
 	.targets { border: 0; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 	.list .targets { padding: 16px 24px; }
 	.k { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 0; margin-bottom: 4px; }
@@ -484,7 +447,6 @@
 	.confirm ul { margin: 6px 0 12px; padding-left: 18px; list-style: disc; }
 	.confirm li { display: list-item; padding: 0; border: 0; }
 	.confirm .row { display: flex; gap: 8px; }
-	.pack .confirm { margin-top: 12px; }
 
 	button.primary, button.ghost { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 16px; border-radius: var(--radius); font-size: 13.5px; font-weight: 500; cursor: pointer; border: 1px solid transparent; flex: none; }
 	button:disabled { opacity: 0.5; cursor: default; }
@@ -492,10 +454,7 @@
 	.primary:not(:disabled):hover { background: #d8003b; }
 	.ghost { background: none; border-color: var(--input) !important; color: var(--foreground); }
 	.ghost:not(:disabled):hover { background: var(--hover); }
-	.ghost.icon { width: 36px; padding: 0; }
 	.ghost.sm, .primary.sm { height: 30px; padding: 0 12px; font-size: 12.5px; }
-	.spin { display: inline-flex; animation: spin 0.9s linear infinite; }
-	@keyframes spin { to { transform: rotate(360deg); } }
 
 	.overlay { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgb(0 0 0 / 55%); }
 	.sheet { position: relative; display: flex; flex-direction: column; gap: 14px; width: min(920px, 100%); max-height: 100%; padding: 20px; background: var(--card); border: 1px solid var(--border); }

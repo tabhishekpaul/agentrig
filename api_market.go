@@ -4,11 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
-	"strconv"
-	"strings"
 
 	"github.com/tabhishekpaul/agentrig/adapters"
 	"github.com/tabhishekpaul/agentrig/catalog"
@@ -19,25 +16,27 @@ import (
 var Version = "dev"
 
 type marketRow struct {
-	catalog.Entry
+	market.Rec
 	Installed bool `json:"installed"`
-}
-
-type packView struct {
-	catalog.Pack
-	Items []marketRow `json:"items"`
 }
 
 func registerMarket(mux *http.ServeMux) {
 	m := market.New(Version)
 	go m.Loop(context.Background())
 
-	rows := func(es []catalog.Entry) []marketRow {
+	rows := func(rs []market.Rec) []marketRow {
 		lock := m.Lock()
-		out := make([]marketRow, len(es))
-		for i, e := range es {
-			_, ok := lock[e.ID]
-			out[i] = marketRow{e, ok}
+		out := make([]marketRow, len(rs))
+		for i, r := range rs {
+			_, ok := lock[r.ID]
+			out[i] = marketRow{r, ok}
+		}
+		return out
+	}
+	recs := func(ss []market.Skill) []market.Rec {
+		out := make([]market.Rec, len(ss))
+		for i, s := range ss {
+			out[i] = market.Rec{Skill: s}
 		}
 		return out
 	}
@@ -48,36 +47,22 @@ func registerMarket(mux *http.ServeMux) {
 		}
 		return true
 	}
-	reply := func(w http.ResponseWriter, err error) {
-		switch {
-		case errors.Is(err, market.ErrConfirm):
-			http.Error(w, err.Error(), http.StatusConflict)
-		case err != nil:
-			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
-		default:
-			writeJSON(w, map[string]bool{"ok": true})
+	fail := func(w http.ResponseWriter, err error) {
+		code := http.StatusUnprocessableEntity
+		if errors.Is(err, market.ErrConfirm) {
+			code = http.StatusConflict
 		}
+		http.Error(w, err.Error(), code)
+	}
+	reply := func(w http.ResponseWriter, err error) {
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": true})
 	}
 
 	mux.HandleFunc("GET /api/market", func(w http.ResponseWriter, r *http.Request) {
-		idx := m.Index()
-		counts := map[string]int{}
-		for _, e := range idx.Skills {
-			counts[e.Category]++
-			if top, _, ok := strings.Cut(e.Category, "/"); ok {
-				counts[top]++
-			}
-		}
-		packs := make([]packView, 0, len(idx.Packs))
-		for _, p := range idx.Packs {
-			var es []catalog.Entry
-			for _, id := range p.Skills {
-				if e, ok := m.Entry(id); ok {
-					es = append(es, e)
-				}
-			}
-			packs = append(packs, packView{p, rows(es)})
-		}
 		type target struct{ ID, Name string }
 		var targets []target
 		for _, t := range adapters.Detect() {
@@ -86,47 +71,53 @@ func registerMarket(mux *http.ServeMux) {
 			}
 		}
 		writeJSON(w, map[string]any{
-			"status": m.Status(), "generated": idx.Generated, "total": len(idx.Skills),
-			"categories": catalog.Categories, "counts": counts, "packs": packs,
-			"installed": m.Lock(), "updates": m.Updates(), "targets": targets,
-			"version": Version, "upgrade": m.Upgrade(),
+			"categories": catalog.Categories, "installed": m.Lock(), "updates": m.Updates(),
+			"targets": targets, "version": Version, "upgrade": m.Upgrade(),
 		})
 	})
+	// q searches; cat runs that category's searches; neither shows popular skills.
 	mux.HandleFunc("GET /api/market/skills", func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query()
-		off, _ := strconv.Atoi(q.Get("offset"))
-		lim, _ := strconv.Atoi(q.Get("limit"))
-		if lim <= 0 || lim > 200 {
-			lim = 50
+		q, cat := r.URL.Query().Get("q"), r.URL.Query().Get("cat")
+		var ss []market.Skill
+		var err error
+		switch {
+		case q != "":
+			ss, err = m.Search(q, 100)
+		case cat != "":
+			if !catalog.Valid(cat) {
+				err = errors.New("unknown category")
+			} else {
+				ss, err = m.SearchMany(market.CategoryTerms(cat), 40)
+			}
+		default:
+			ss, err = m.Popular()
 		}
-		total, es := m.Query(q.Get("q"), q.Get("cat"), q.Get("sort"), off, lim)
-		writeJSON(w, map[string]any{"total": total, "skills": rows(es)})
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"skills": rows(recs(ss))})
 	})
-	mux.HandleFunc("POST /api/market/refresh", func(w http.ResponseWriter, r *http.Request) {
-		_ = m.Refresh() // the outcome is in status
-		_ = m.CheckLatest()
-		writeJSON(w, m.Status())
+	mux.HandleFunc("GET /api/market/skill", func(w http.ResponseWriter, r *http.Request) {
+		d, err := m.Describe(r.URL.Query().Get("id"))
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		writeJSON(w, d)
+	})
+	mux.HandleFunc("GET /api/market/updates", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, m.CheckUpdates())
 	})
 	mux.HandleFunc("POST /api/market/install", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			IDs    []string `json:"ids"` // one skill, or every skill of a pack
+			ID     string   `json:"id"`
 			Tools  []string `json:"tools"`
 			Accept bool     `json:"accept"`
 		}
-		if !body(w, r, &req) {
-			return
+		if body(w, r, &req) {
+			reply(w, m.Install(req.ID, req.Tools, req.Accept))
 		}
-		lock := m.Lock()
-		var errs []error
-		for _, id := range req.IDs {
-			if _, done := lock[id]; done && len(req.IDs) > 1 {
-				continue // a pack skips what you already have
-			}
-			if err := m.Install(id, req.Tools, req.Accept); err != nil {
-				errs = append(errs, fmt.Errorf("%s: %w", id, err))
-			}
-		}
-		reply(w, errors.Join(errs...))
 	})
 	mux.HandleFunc("POST /api/market/uninstall", func(w http.ResponseWriter, r *http.Request) {
 		var req struct{ ID string }
@@ -135,14 +126,12 @@ func registerMarket(mux *http.ServeMux) {
 		}
 	})
 	mux.HandleFunc("GET /api/market/review", func(w http.ResponseWriter, r *http.Request) {
-		id := r.URL.Query().Get("id")
-		d, err := m.Review(id)
+		d, flags, err := m.Review(r.URL.Query().Get("id"))
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			fail(w, err)
 			return
 		}
-		e, _ := m.Entry(id)
-		writeJSON(w, map[string]any{"diff": d, "entry": e})
+		writeJSON(w, map[string]any{"diff": d, "flags": flags})
 	})
 	mux.HandleFunc("POST /api/market/update", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -154,16 +143,30 @@ func registerMarket(mux *http.ServeMux) {
 		}
 	})
 	mux.HandleFunc("GET /api/market/recommend", func(w http.ResponseWriter, r *http.Request) {
-		p := r.URL.Query().Get("project")
-		if p != "" {
+		local := catalog.Local(adapters.Detect())
+		var signals []market.Signal
+		if p := r.URL.Query().Get("project"); p != "" {
 			home, _ := os.UserHomeDir()
-			var err error
-			if p, err = market.ProjectDir(p, home); err != nil {
-				http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			p, err := market.ProjectDir(p, home)
+			if err != nil {
+				fail(w, err)
 				return
 			}
+			signals = market.Scan(p)
 		}
-		recs, pairs := m.Recommend(p, catalog.Local(adapters.Detect()))
-		writeJSON(w, map[string]any{"recs": recs, "pairs": pairs})
+		signals = append(signals, market.LibrarySignals(local)...)
+		lock, have := m.Lock(), map[string]bool{}
+		for _, e := range local {
+			have[e.ID] = true
+		}
+		out, err := m.Recommend(signals, func(s market.Skill) bool {
+			_, inLock := lock[s.ID]
+			return inLock || have[s.SkillID]
+		}, 30)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"recs": rows(out)})
 	})
 }

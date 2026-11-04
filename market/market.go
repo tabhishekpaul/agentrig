@@ -1,7 +1,7 @@
-// Package market browses the published skill index, installs skills from it
-// at a pinned commit, reviews and applies updates, and recommends skills for a
-// project. Everything runs locally: the only requests are the daily index and
-// version checks and the downloads the user asks for.
+// Package market searches skills.sh, installs skills from it, reviews and
+// applies updates, and recommends skills for a project. Everything runs
+// locally: the only requests are the searches, downloads and version checks
+// the dashboard asks for, plus one update check a day.
 package market
 
 import (
@@ -11,9 +11,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
+	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,46 +25,65 @@ import (
 	"github.com/tabhishekpaul/agentrig/catalog"
 )
 
-// LatestURL says which arig release is current: {"version":"vX.Y.Z","url":"…"}.
-const LatestURL = "https://tabhishekpaul.github.io/agentrig/latest.json"
-
 const (
-	maxIndex = 50 << 20 // index.json download cap
-	day      = 24 * time.Hour
+	DefaultBase = "https://skills.sh"
+	ReleasesURL = "https://api.github.com/repos/tabhishekpaul/agentrig/releases/latest"
+	UserAgent   = "agentrig (+https://github.com/tabhishekpaul/agentrig)"
+
+	maxSearch   = 2 << 20
+	maxDownload = 50 << 20
+	cacheTTL    = 10 * time.Minute
+	day         = 24 * time.Hour
+)
+
+var (
+	nameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`)
+	hashRe = regexp.MustCompile(`^[0-9a-fA-F]{1,128}$`)
 )
 
 type Market struct {
-	Dir       string // UserConfigDir/agentrig
-	IndexURL  string
-	LatestURL string
-	Codeload  string // tarball host, https://codeload.github.com
-	Version   string // the running arig's version
-	SkillDir  func(tool string) string
-	HTTP      *http.Client
+	Dir         string // UserConfigDir/agentrig
+	Base        string // skills.sh
+	ReleasesURL string
+	Version     string // the running arig's version
+	SkillDir    func(tool string) string
+	HTTP        *http.Client
 
-	mu     sync.RWMutex
-	idx    catalog.Index
-	byID   map[string]int
-	meta   meta
-	latest Latest
-	tried  time.Time // last version check
+	mu      sync.Mutex
+	cache   map[string]cached // "s:<query>" search results, "d:<id>" downloads
+	latest  Latest
+	tried   time.Time // last release check
+	updates map[string]Update
+	checked time.Time // last update check
 
-	refreshMu sync.Mutex
-	opMu      sync.Mutex // one install / update / uninstall at a time
+	opMu sync.Mutex // one install / update / uninstall at a time
 }
 
-// Status of the local copy of the index.
-type Status struct {
-	State   string    `json:"state"` // ok | missing (404) | offline | error | "" (never fetched)
-	Checked time.Time `json:"checked,omitzero"`
-	Tried   time.Time `json:"tried,omitzero"`
-	Error   string    `json:"error,omitempty"`
+type cached struct {
+	at time.Time
+	v  any
 }
 
-type meta struct {
-	Status
-	ETag         string `json:"etag,omitempty"`
-	LastModified string `json:"lastModified,omitempty"`
+// Skill is one skills.sh search result.
+type Skill struct {
+	ID       string `json:"id"` // source/skillId
+	Source   string `json:"source"`
+	SkillID  string `json:"skillId"`
+	Name     string `json:"name"`
+	Installs int    `json:"installs"`
+	Category string `json:"category"` // from catalog.Classify
+}
+
+// File is one file of a skills.sh download.
+type File struct {
+	Path     string `json:"path"`
+	Contents string `json:"contents"`
+}
+
+// Download is a whole skill as skills.sh serves it; Hash names the version.
+type Download struct {
+	Files []File `json:"files"`
+	Hash  string `json:"hash"`
 }
 
 // Latest is the newest arig release.
@@ -70,170 +92,234 @@ type Latest struct {
 	URL     string `json:"url,omitempty"`
 }
 
-// New returns a Market for this user, with the cached index loaded.
-// ARIG_INDEX_URL overrides where the index comes from.
+// New returns a Market for this user. ARIG_SKILLS_URL overrides skills.sh.
 func New(version string) *Market {
 	cfg, _ := os.UserConfigDir()
-	url := os.Getenv("ARIG_INDEX_URL")
-	if url == "" {
-		url = catalog.IndexURL
+	base := os.Getenv("ARIG_SKILLS_URL")
+	if base == "" {
+		base = DefaultBase
 	}
-	m := &Market{Dir: filepath.Join(cfg, "agentrig"), IndexURL: url, LatestURL: LatestURL,
-		Codeload: "https://codeload.github.com", Version: version, SkillDir: adapters.SkillDir,
-		HTTP: &http.Client{Timeout: 5 * time.Minute}}
-	m.loadCache()
-	return m
+	return &Market{Dir: filepath.Join(cfg, "agentrig"), Base: strings.TrimSuffix(base, "/"), ReleasesURL: ReleasesURL,
+		Version: version, SkillDir: adapters.SkillDir, HTTP: &http.Client{Timeout: 2 * time.Minute}}
 }
 
 func (m *Market) cacheDir() string { return filepath.Join(m.Dir, "market") }
 
-func (m *Market) loadCache() {
-	if b, err := os.ReadFile(filepath.Join(m.cacheDir(), "index.meta.json")); err == nil {
-		_ = json.Unmarshal(b, &m.meta)
+// SplitID checks owner/repo/skillId and returns its parts.
+func SplitID(id string) (owner, repo, skill string, err error) {
+	p := strings.Split(id, "/")
+	if len(p) != 3 || !nameRe.MatchString(p[0]) || !nameRe.MatchString(p[1]) || !nameRe.MatchString(p[2]) || slices.Contains(p, "..") {
+		return "", "", "", fmt.Errorf("bad skill id %q", id)
 	}
-	if b, err := os.ReadFile(filepath.Join(m.cacheDir(), "index.json")); err == nil {
-		if idx, err := parseIndex(b); err == nil {
-			m.setIndex(idx)
-		}
-	}
+	return p[0], p[1], p[2], nil
 }
 
-func parseIndex(b []byte) (catalog.Index, error) {
-	var idx catalog.Index
-	if err := json.Unmarshal(b, &idx); err != nil {
-		return idx, fmt.Errorf("index is not valid JSON: %w", err)
-	}
-	if idx.Version != 1 {
-		return idx, fmt.Errorf("unsupported index version %d (update arig)", idx.Version)
-	}
-	return idx, nil
-}
-
-func (m *Market) setIndex(idx catalog.Index) {
-	byID := make(map[string]int, len(idx.Skills))
-	for i, e := range idx.Skills {
-		byID[e.ID] = i
-	}
-	m.mu.Lock()
-	m.idx, m.byID = idx, byID
-	m.mu.Unlock()
-}
-
-// Index returns the current index (zero if none was ever fetched).
-func (m *Market) Index() catalog.Index {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.idx
-}
-
-// Entry looks up a skill in the index.
-func (m *Market) Entry(id string) (catalog.Entry, bool) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	i, ok := m.byID[id]
-	if !ok {
-		return catalog.Entry{}, false
-	}
-	return m.idx.Skills[i], true
-}
-
-func (m *Market) Status() Status {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.meta.Status
-}
-
-// Refresh fetches the index if it changed (ETag / If-Modified-Since). Offline
-// or not yet published is not fatal: the cached copy stays in use.
-func (m *Market) Refresh() error {
-	m.refreshMu.Lock()
-	defer m.refreshMu.Unlock()
-	m.mu.RLock()
-	md, have := m.meta, m.idx.Version != 0
-	m.mu.RUnlock()
-
-	md.Tried, md.Error = time.Now(), ""
-	err := m.fetchIndex(&md, have)
+func (m *Market) get(u string, max int64, v any) error {
+	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
-		md.Error = err.Error()
-	}
-	m.mu.Lock()
-	m.meta = md
-	m.mu.Unlock()
-	if b, e := json.Marshal(md); e == nil {
-		_ = writeFile(filepath.Join(m.cacheDir(), "index.meta.json"), b)
-	}
-	return err
-}
-
-func (m *Market) fetchIndex(md *meta, have bool) error {
-	req, err := http.NewRequest("GET", m.IndexURL, nil)
-	if err != nil {
-		md.State = "error"
 		return err
 	}
-	if have {
-		if md.ETag != "" {
-			req.Header.Set("If-None-Match", md.ETag)
-		}
-		if md.LastModified != "" {
-			req.Header.Set("If-Modified-Since", md.LastModified)
-		}
-	}
+	req.Header.Set("User-Agent", UserAgent)
 	res, err := m.HTTP.Do(req)
 	if err != nil {
-		md.State = "offline"
 		return err
 	}
 	defer res.Body.Close()
-	switch res.StatusCode {
-	case http.StatusNotModified:
-		md.State, md.Checked = "ok", md.Tried
-		return nil
-	case http.StatusNotFound:
-		md.State, md.Checked = "missing", md.Tried
-		return nil
-	case http.StatusOK:
-	default:
-		md.State = "error"
-		return fmt.Errorf("index: %s", res.Status)
+	if res.StatusCode != http.StatusOK {
+		return &statusError{res.StatusCode, res.Status}
 	}
-	b, err := io.ReadAll(io.LimitReader(res.Body, maxIndex+1))
-	if err == nil && len(b) > maxIndex {
-		err = fmt.Errorf("index is larger than %d MB", maxIndex>>20)
+	b, err := io.ReadAll(io.LimitReader(res.Body, max+1))
+	if err != nil {
+		return err
+	}
+	if int64(len(b)) > max {
+		return fmt.Errorf("response is larger than %d MB", max>>20)
+	}
+	return json.Unmarshal(b, v)
+}
+
+type statusError struct {
+	code   int
+	status string
+}
+
+func (e *statusError) Error() string { return "skills.sh: " + e.status }
+
+func (m *Market) cached(key string) (any, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c, ok := m.cache[key]
+	return c.v, ok && time.Since(c.at) < cacheTTL
+}
+
+// ponytail: in-memory, pruned on write; downloads can be tens of MB each, so
+// an LRU cap is the upgrade if people browse hundreds of skills per session.
+func (m *Market) store(key string, v any) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cache == nil {
+		m.cache = map[string]cached{}
+	}
+	for k, c := range m.cache {
+		if time.Since(c.at) >= cacheTTL {
+			delete(m.cache, k)
+		}
+	}
+	m.cache[key] = cached{time.Now(), v}
+}
+
+// Search asks skills.sh for up to limit skills matching q, most installed first.
+func (m *Market) Search(q string, limit int) ([]Skill, error) {
+	q = strings.TrimSpace(q)
+	if len([]rune(q)) < 2 {
+		return nil, errors.New("type at least 2 characters")
+	}
+	if len(q) > 200 {
+		return nil, errors.New("query is too long")
+	}
+	limit = min(max(limit, 1), 100)
+	key := "s:" + strconv.Itoa(limit) + ":" + strings.ToLower(q)
+	if v, ok := m.cached(key); ok {
+		return v.([]Skill), nil
+	}
+	var r struct {
+		Skills []Skill `json:"skills"`
+		Error  string  `json:"error"`
+	}
+	err := m.get(m.Base+"/api/search?"+url.Values{"q": {q}, "limit": {strconv.Itoa(limit)}}.Encode(), maxSearch, &r)
+	if err == nil && r.Error != "" {
+		err = errors.New("skills.sh: " + r.Error)
 	}
 	if err != nil {
-		md.State = "error"
-		return err
+		return nil, err
 	}
-	idx, err := parseIndex(b)
-	if err != nil {
-		md.State = "error"
-		return err
+	out := make([]Skill, 0, len(r.Skills))
+	for _, s := range r.Skills {
+		s.ID = s.Source + "/" + s.SkillID
+		if _, _, _, err := SplitID(s.ID); err != nil {
+			continue
+		}
+		if s.Name == "" {
+			s.Name = s.SkillID
+		}
+		s.Category = catalog.Classify(s.Name, "")
+		out = append(out, s)
 	}
-	if err := writeFile(filepath.Join(m.cacheDir(), "index.json"), b); err != nil {
-		md.State = "error"
-		return err
+	slices.SortStableFunc(out, func(a, b Skill) int { return b.Installs - a.Installs })
+	m.store(key, out)
+	return out, nil
+}
+
+// SearchMany runs several searches in parallel and merges them, deduped and
+// most installed first. Failed searches are skipped unless all fail.
+func (m *Market) SearchMany(terms []string, each int) ([]Skill, error) {
+	res := make([][]Skill, len(terms))
+	errs := make([]error, len(terms))
+	var wg sync.WaitGroup
+	for i, t := range terms {
+		wg.Go(func() { res[i], errs[i] = m.Search(t, each) })
 	}
-	m.setIndex(idx)
-	md.State, md.Checked = "ok", md.Tried
-	md.ETag, md.LastModified = res.Header.Get("ETag"), res.Header.Get("Last-Modified")
+	wg.Wait()
+	seen := map[string]bool{}
+	var out []Skill
+	for _, r := range res {
+		for _, s := range r {
+			if !seen[s.ID] {
+				seen[s.ID] = true
+				out = append(out, s)
+			}
+		}
+	}
+	if len(out) == 0 && len(terms) > 0 {
+		if err := errors.Join(errs...); err != nil {
+			return nil, err
+		}
+	}
+	slices.SortStableFunc(out, func(a, b Skill) int { return b.Installs - a.Installs })
+	return out, nil
+}
+
+// popular seeds the first view: a few broad searches merged by installs.
+var popular = []string{"react", "design", "pdf", "test", "git", "python", "docs", "agent"}
+
+// Popular is the default view before anything is typed.
+func (m *Market) Popular() ([]Skill, error) {
+	s, err := m.SearchMany(popular, 30)
+	return s[:min(len(s), 100)], err
+}
+
+// catTerms are search terms for subcategories whose name searches badly.
+var catTerms = map[string]string{
+	"coding/languages": "python", "coding/review": "code review", "design/brand": "branding",
+	"writing/docs": "documentation", "writing/content": "writing", "data/analysis": "data analysis",
+	"data/ml": "machine learning", "security/appsec": "security", "documents/office": "docx",
+	"documents/spreadsheets": "excel", "agents/skills": "skill creator", "agents/automation": "automation",
+	"productivity/workflow": "workflow",
+}
+
+// CategoryTerms turns "top" or "top/sub" into search terms.
+func CategoryTerms(cat string) []string {
+	top, sub, _ := strings.Cut(cat, "/")
+	for _, c := range catalog.Categories {
+		if c.ID != top {
+			continue
+		}
+		var out []string
+		for _, s := range c.Subs {
+			if sub == "" || s == sub {
+				t := catTerms[top+"/"+s]
+				if t == "" {
+					t = s
+				}
+				out = append(out, t)
+			}
+		}
+		return out
+	}
 	return nil
 }
 
-// Loop refreshes the index and the version check once a day; a failed check
-// (offline) is retried hourly.
+// Get downloads one skill (cached for a few minutes).
+func (m *Market) Get(id string) (Download, error) {
+	owner, repo, skill, err := SplitID(id)
+	if err != nil {
+		return Download{}, err
+	}
+	if v, ok := m.cached("d:" + id); ok {
+		return v.(Download), nil
+	}
+	var d Download
+	u := m.Base + "/api/download/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/" + url.PathEscape(skill)
+	if err := m.get(u, maxDownload, &d); err != nil {
+		var se *statusError
+		if errors.As(err, &se) && se.code == http.StatusNotFound {
+			return d, fmt.Errorf("%s isn't on skills.sh", id)
+		}
+		return d, err
+	}
+	if !hashRe.MatchString(d.Hash) {
+		return d, fmt.Errorf("%s: download has no version hash", id)
+	}
+	if !slices.ContainsFunc(d.Files, func(f File) bool { return f.Path == "SKILL.md" }) {
+		return d, fmt.Errorf("%s has no SKILL.md", id)
+	}
+	m.store("d:"+id, d)
+	return d, nil
+}
+
+// Loop checks installed skills for updates and arig for a new release once a
+// day; a failed release check (offline) is retried hourly.
 func (m *Market) Loop(ctx context.Context) {
 	t := time.NewTicker(time.Hour)
 	defer t.Stop()
 	for {
-		if s := m.Status(); (s.State != "ok" && s.State != "missing") || time.Since(s.Checked) >= day {
-			_ = m.Refresh()
-		}
-		m.mu.RLock()
-		stale := time.Since(m.tried) >= day || m.latest.Version == ""
-		m.mu.RUnlock()
+		m.mu.Lock()
+		stale, rel := time.Since(m.checked) >= day, time.Since(m.tried) >= day || m.latest.Version == ""
+		m.mu.Unlock()
 		if stale {
+			m.CheckUpdates()
+		}
+		if rel {
 			_ = m.CheckLatest()
 		}
 		select {
@@ -244,56 +330,37 @@ func (m *Market) Loop(ctx context.Context) {
 	}
 }
 
-// Query filters by category ("top" or "top/sub"), ranks by query (BM25) or
-// sorts by "installs" (default without a query; then stars) / "stars" /
-// "updated", and pages the result.
-func (m *Market) Query(q, cat, by string, offset, limit int) (int, []catalog.Entry) {
-	all := m.Index().Skills
-	var out []catalog.Entry
-	for _, e := range all {
-		if cat == "" || e.Category == cat || strings.HasPrefix(e.Category, cat+"/") {
-			out = append(out, e)
-		}
-	}
-	if strings.TrimSpace(q) != "" {
-		out = catalog.Search(out, q, 0)
-	}
-	switch {
-	case by == "updated":
-		ts := func(e catalog.Entry) time.Time { t, _ := time.Parse(time.RFC3339, e.Updated); return t }
-		sort.SliceStable(out, func(i, j int) bool { return ts(out[i]).After(ts(out[j])) })
-	case by == "stars":
-		sort.SliceStable(out, func(i, j int) bool { return out[i].Stars > out[j].Stars })
-	case by == "installs" || strings.TrimSpace(q) == "":
-		sort.SliceStable(out, func(i, j int) bool {
-			if out[i].Installs != out[j].Installs {
-				return out[i].Installs > out[j].Installs
-			}
-			return out[i].Stars > out[j].Stars
-		})
-	}
-	total := len(out)
-	offset = min(max(offset, 0), total)
-	return total, out[offset:min(offset+limit, total)]
-}
-
-// CheckLatest reads which arig release is current.
+// CheckLatest reads the newest arig release from GitHub. No release yet (404)
+// means nothing to offer.
 func (m *Market) CheckLatest() error {
 	m.mu.Lock()
 	m.tried = time.Now()
 	m.mu.Unlock()
-	res, err := m.HTTP.Get(m.LatestURL)
+	req, err := http.NewRequest("GET", m.ReleasesURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	res, err := m.HTTP.Do(req)
 	if err != nil {
 		return err
 	}
 	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("latest: %s", res.Status)
+	var r struct {
+		Tag string `json:"tag_name"`
+		URL string `json:"html_url"`
 	}
-	var l Latest
-	if err := json.NewDecoder(io.LimitReader(res.Body, 64<<10)).Decode(&l); err != nil {
-		return err
+	switch res.StatusCode {
+	case http.StatusOK:
+		if err := json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&r); err != nil {
+			return err
+		}
+	case http.StatusNotFound:
+	default:
+		return fmt.Errorf("releases: %s", res.Status)
 	}
+	l := Latest{Version: r.Tag, URL: r.URL}
 	if !strings.HasPrefix(l.URL, "https://") {
 		l.URL = ""
 	}
@@ -305,8 +372,8 @@ func (m *Market) CheckLatest() error {
 
 // Upgrade returns the newer release, if there is one.
 func (m *Market) Upgrade() *Latest {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if Newer(m.Version, m.latest.Version) {
 		l := m.latest
 		return &l
@@ -377,5 +444,3 @@ func writeFile(path string, b []byte) error {
 	}
 	return err
 }
-
-var errNotIndexed = errors.New("not in the marketplace index (try Refresh)")

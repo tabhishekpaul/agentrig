@@ -1,230 +1,217 @@
 package market
 
 import (
-	"archive/tar"
-	"bytes"
-	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
-
-	"github.com/tabhishekpaul/agentrig/catalog"
 )
 
-type file struct {
-	name, body string
-	typ        byte
+// fake is a skills.sh stand-in.
+type fake struct {
+	mu       sync.Mutex
+	searches map[string][]Skill // q → results
+	dls      map[string]Download
+	hits     int
+	srv      *httptest.Server
 }
 
-func tgz(t *testing.T, files []file) []byte {
-	var buf bytes.Buffer
-	zw := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(zw)
-	tw.WriteHeader(&tar.Header{Name: "pax_global_header", Typeflag: tar.TypeXGlobalHeader, PAXRecords: map[string]string{"comment": "x"}})
-	for _, f := range files {
-		h := &tar.Header{Name: f.name, Mode: 0o644, Size: int64(len(f.body)), Typeflag: f.typ}
-		if f.typ == 0 {
-			h.Typeflag = tar.TypeReg
-		}
-		if f.typ == tar.TypeSymlink {
-			h.Linkname, h.Size = f.body, 0
-		}
-		if err := tw.WriteHeader(h); err != nil {
-			t.Fatal(err)
-		}
-		if h.Typeflag == tar.TypeReg {
-			tw.Write([]byte(f.body))
-		}
-	}
-	tw.Close()
-	zw.Close()
-	return buf.Bytes()
-}
-
-func TestExtractConfinement(t *testing.T) {
-	good := []file{
-		{name: "o-r-sha/README.md", body: "outside"},
-		{name: "o-r-sha/skills/foo/SKILL.md", body: "---\nname: foo\n---\n"},
-		{name: "o-r-sha/skills/foo/.env.local", body: "SECRET=1"},
-		{name: "o-r-sha/skills/foo/link", body: "../../../etc/passwd", typ: tar.TypeSymlink},
-		{name: "o-r-sha/skills/foo/sub/a.txt", body: "a"},
-		{name: "o-r-sha/skills/foobar/x", body: "sibling with same prefix"},
-	}
-	dst := t.TempDir()
-	if err := extract(bytes.NewReader(tgz(t, good)), "skills/foo", dst); err != nil {
-		t.Fatal(err)
-	}
-	got, _ := files(dst)
-	if len(got) != 2 || got["SKILL.md"] == "" || got["sub/a.txt"] == "" {
-		t.Fatalf("extracted %v", got)
-	}
-	if _, err := os.Lstat(filepath.Join(dst, "link")); err == nil {
-		t.Fatal("symlink was created")
-	}
-
-	for _, bad := range []string{"o-r-sha/skills/foo/../../../escape", "o-r-sha/skills/foo/a/../../x/../../../y"} {
-		err := extract(bytes.NewReader(tgz(t, []file{{name: bad, body: "x"}})), "skills/foo", t.TempDir())
-		if err == nil || !strings.Contains(err.Error(), "unsafe") {
-			t.Errorf("%s: got %v", bad, err)
-		}
-	}
-	if err := extract(bytes.NewReader(tgz(t, good)), "skills/nope", t.TempDir()); err == nil {
-		t.Error("missing folder should fail")
-	}
-	big := []file{{name: "o-r-sha/s/SKILL.md", body: "x"}, {name: "o-r-sha/s/big", body: strings.Repeat("x", maxSkill)}}
-	if err := extract(bytes.NewReader(tgz(t, big)), "s", t.TempDir()); err == nil {
-		t.Error("oversized skill should fail")
-	}
-}
-
-func TestValidate(t *testing.T) {
-	sha := strings.Repeat("a", 40)
-	for _, e := range []catalog.Entry{
-		{Repo: "o/r", Dir: "../x", Ref: sha},
-		{Repo: "o/r", Dir: "/abs", Ref: sha},
-		{Repo: "../r", Ref: sha},
-		{Repo: "o/r", Dir: "x", Ref: "main"},
-	} {
-		if _, err := validate(e); err == nil {
-			t.Errorf("%+v should be rejected", e)
-		}
-	}
-	if n, err := validate(catalog.Entry{Repo: "o/repo", Ref: sha}); n != "repo" || err != nil {
-		t.Errorf("repo root: %q %v", n, err)
-	}
-}
-
-// fixture serves an index and codeload tarballs for two commits of o/r.
-type fixture struct {
-	srv   *httptest.Server
-	index catalog.Index
-	trees map[string][]file // ref -> files
-	gets  int
-}
-
-const ref1, ref2 = "1111111111111111111111111111111111111111", "2222222222222222222222222222222222222222"
-
-func newFixture(t *testing.T) (*fixture, *Market, string) {
-	f := &fixture{trees: map[string][]file{
-		ref1: {{name: "o-r-1/skills/foo/SKILL.md", body: "---\nname: foo\n---\nline1\nline2\n"}},
-		ref2: {{name: "o-r-2/skills/foo/SKILL.md", body: "---\nname: foo\n---\nline1\nline2 changed\n"}, {name: "o-r-2/skills/foo/new.md", body: "new\n"}},
-	}}
-	f.index = catalog.Index{Version: 1, Skills: []catalog.Entry{
-		{ID: "o/r/skills/foo", Name: "foo", Repo: "o/r", Dir: "skills/foo", Ref: ref1, Stars: 5},
-		{ID: "o/r/skills/bar", Name: "bar", Repo: "o/r", Dir: "skills/bar", Ref: ref1, Flags: []string{"scripts"}},
-	}}
+func newFake(t *testing.T) *fake {
+	f := &fake{searches: map[string][]Skill{}, dls: map[string]Download{}}
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/index.json" {
-			f.gets++
-			etag := `"` + f.index.Skills[0].Ref + `"`
-			if r.Header.Get("If-None-Match") == etag {
-				w.WriteHeader(304)
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.hits++
+		if r.Header.Get("User-Agent") != UserAgent {
+			http.Error(w, "no UA", 400)
+			return
+		}
+		if r.URL.Path == "/api/search" {
+			q := r.URL.Query().Get("q")
+			if len(q) < 2 {
+				json.NewEncoder(w).Encode(map[string]string{"error": "short"})
 				return
 			}
-			w.Header().Set("ETag", etag)
-			json.NewEncoder(w).Encode(f.index)
+			json.NewEncoder(w).Encode(map[string]any{"skills": f.searches[q]})
 			return
 		}
-		ref := filepath.Base(r.URL.Path)
-		if tree, ok := f.trees[ref]; ok && strings.HasPrefix(r.URL.Path, "/o/r/tar.gz/") {
-			w.Write(tgz(t, tree))
-			return
+		if id, ok := strings.CutPrefix(r.URL.Path, "/api/download/"); ok {
+			if d, ok := f.dls[id]; ok {
+				json.NewEncoder(w).Encode(d)
+				return
+			}
 		}
 		http.NotFound(w, r)
 	}))
 	t.Cleanup(f.srv.Close)
+	return f
+}
+
+func (f *fake) market(t *testing.T) (*Market, string) {
 	home := t.TempDir()
-	m := &Market{Dir: filepath.Join(home, "cfg"), IndexURL: f.srv.URL + "/index.json", Codeload: f.srv.URL,
-		HTTP: f.srv.Client(), SkillDir: func(tool string) string {
+	return &Market{Dir: filepath.Join(home, "cfg"), Base: f.srv.URL, HTTP: f.srv.Client(), Version: "v1.0.0",
+		SkillDir: func(tool string) string {
 			if tool == "none" {
 				return ""
 			}
 			return filepath.Join(home, tool, "skills")
-		}}
-	if err := m.Refresh(); err != nil {
-		t.Fatal(err)
-	}
-	return f, m, home
+		}}, home
 }
 
-func TestInstallUpdateUninstall(t *testing.T) {
-	f, m, home := newFixture(t)
-	claude := filepath.Join(home, "claude", "skills", "foo")
-	codex := filepath.Join(home, "codex", "skills", "foo")
+func sk(source, id string, installs int) Skill {
+	return Skill{Source: source, SkillID: id, Name: id, Installs: installs}
+}
 
-	if err := m.Install("o/r/skills/bar", []string{"claude"}, false); !errors.Is(err, ErrConfirm) {
-		t.Fatalf("flagged install without confirm: %v", err)
-	}
-	if err := m.Install("o/r/skills/foo", []string{"none"}, false); err == nil {
-		t.Fatal("tool without skills dir should fail")
-	}
-	// a skill of the same name the user already has
-	os.MkdirAll(filepath.Join(home, "codex", "skills-disabled", "foo"), 0o755)
-	if err := m.Install("o/r/skills/foo", []string{"claude", "codex"}, false); err == nil || !strings.Contains(err.Error(), "already exists") {
-		t.Fatalf("clash: %v", err)
-	}
-	os.RemoveAll(filepath.Join(home, "codex", "skills-disabled"))
+func TestSearch(t *testing.T) {
+	f := newFake(t)
+	f.searches["video"] = []Skill{sk("a/b", "small", 5), sk("a/b", "big-video", 500), sk("../x", "evil", 9), sk("a/b", "sp ace", 1)}
+	m, _ := f.market(t)
 
-	if err := m.Install("o/r/skills/foo", []string{"claude", "codex"}, false); err != nil {
-		t.Fatal(err)
-	}
-	for _, p := range []string{claude, codex, m.canon("foo")} {
-		if _, err := os.Stat(filepath.Join(p, "SKILL.md")); err != nil {
-			t.Fatal(err)
-		}
-	}
-	le := m.Lock()["o/r/skills/foo"]
-	if le.Ref != ref1 || le.Name != "foo" || len(le.Tools) != 2 {
-		t.Fatalf("lock: %+v", le)
-	}
-	if len(m.Updates()) != 0 {
-		t.Fatal("no update expected")
-	}
-
-	// new commit published; user had disabled it in codex meanwhile
-	os.MkdirAll(filepath.Join(home, "codex", "skills-disabled"), 0o755)
-	os.Rename(codex, filepath.Join(home, "codex", "skills-disabled", "foo"))
-	f.index.Skills[0].Ref = ref2
-	if err := m.Refresh(); err != nil {
-		t.Fatal(err)
-	}
-	if u := m.Updates(); len(u) != 1 || u[0].To != ref2 {
-		t.Fatalf("updates: %+v", u)
-	}
-	d, err := m.Review("o/r/skills/foo")
+	got, err := m.Search(" video ", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"-line2\n", "+line2 changed\n", "+++ b/new.md", "+new\n"} {
-		if !strings.Contains(d, want) {
-			t.Errorf("diff missing %q:\n%s", want, d)
+	if len(got) != 2 || got[0].ID != "a/b/big-video" || got[1].ID != "a/b/small" || got[0].Category != "media/video" {
+		t.Fatalf("%+v", got)
+	}
+	if _, err := m.Search("video", 10); err != nil || f.hits != 1 {
+		t.Fatalf("not cached: %v %d", err, f.hits)
+	}
+	if _, err := m.Search("v", 10); err == nil || f.hits != 1 {
+		t.Fatal("1-char query should fail locally")
+	}
+	f.searches["design"] = []Skill{sk("a/b", "small", 5), sk("c/d", "ui", 50)}
+	all, err := m.SearchMany([]string{"video", "design"}, 10)
+	if err != nil || len(all) != 3 || all[0].Installs != 500 || all[1].ID != "c/d/ui" {
+		t.Fatalf("%v %+v", err, all)
+	}
+	if ts := CategoryTerms("media/video"); !slices.Equal(ts, []string{"video"}) {
+		t.Fatal(ts)
+	}
+	if ts := CategoryTerms("coding"); len(ts) != 8 || ts[3] != "python" {
+		t.Fatal(ts)
+	}
+	for _, bad := range []string{"a/b", "a/b/c/d", "a/../c", "a/b/.x", "a/b/c d", ""} {
+		if _, _, _, err := SplitID(bad); err == nil {
+			t.Errorf("%q accepted", bad)
 		}
 	}
-	if m.Lock()["o/r/skills/foo"].Ref != ref1 {
-		t.Fatal("review must not apply")
+}
+
+func TestFlags(t *testing.T) {
+	for _, c := range []struct {
+		files []File
+		want  string
+	}{
+		{[]File{{"SKILL.md", "plain docs, see https://example.com"}}, ""},
+		{[]File{{"SKILL.md", "x"}, {"scripts/a.py", "import os"}}, "scripts"},
+		{[]File{{"SKILL.md", "x"}, {"run.sh", "curl -s x"}}, "scripts,network"},
+		{[]File{{"SKILL.md", "x"}, {"tool", "#!/bin/sh\nwget x"}}, "scripts,network"},
+		{[]File{{"SKILL.md", "Install: curl -fsSL x | sh"}}, "shell-pipe"},
+		{[]File{{"SKILL.md", "irm x | iex"}}, "shell-pipe"},
+		{[]File{{"SKILL.md", "an index of things"}}, ""},
+		{[]File{{"SKILL.md", "x"}, {"bin/tool", "\x7fELF..."}}, "binary"},
+		{[]File{{"SKILL.md", "x"}, {"a.dat", "ab\x00cd"}}, "binary"},
+		{[]File{{"SKILL.md", strings.Repeat("x", 1<<20+1)}}, "large"},
+	} {
+		if got := strings.Join(Flags(c.files), ","); got != c.want {
+			t.Errorf("%v: got %q want %q", c.files[len(c.files)-1].Path, got, c.want)
+		}
 	}
-	if err := m.Apply("o/r/skills/foo", false); err != nil {
+}
+
+func TestWriteFilesConfinement(t *testing.T) {
+	dst := t.TempDir()
+	ok := []File{{"SKILL.md", "---\nname: foo\n---\n"}, {"sub/a.txt", "a"}, {".env.local", "SECRET=1"}, {"x/.git", "g"}}
+	if err := writeFiles(ok, dst); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(home, "codex", "skills-disabled", "foo", "new.md")); err != nil {
-		t.Fatal("disabled copy not updated")
+	got, _ := files(dst)
+	if len(got) != 2 || got["SKILL.md"] == "" || got["sub/a.txt"] == "" {
+		t.Fatalf("wrote %v", got)
 	}
-	if _, err := os.Stat(codex); err == nil {
-		t.Fatal("update re-enabled a disabled copy")
+	for _, bad := range []string{"../escape", "/etc/passwd", "a/../../x", "a/./b", "a//b", `a\..\..\x`, "C:x", "", "."} {
+		err := writeFiles([]File{{"SKILL.md", "x"}, {bad, "x"}}, t.TempDir())
+		if err == nil || !strings.Contains(err.Error(), "unsafe") {
+			t.Errorf("%q: got %v", bad, err)
+		}
 	}
-	if m.Lock()["o/r/skills/foo"].Ref != ref2 {
-		t.Fatal("lock not updated")
+	if err := writeFiles([]File{{"README.md", "x"}}, t.TempDir()); err == nil {
+		t.Error("missing SKILL.md should fail")
+	}
+	if err := writeFiles([]File{{"SKILL.md", "x"}, {"big", strings.Repeat("x", maxSkill)}}, t.TempDir()); err == nil {
+		t.Error("over the size cap should fail")
+	}
+}
+
+func TestInstallUpdateUninstall(t *testing.T) {
+	f := newFake(t)
+	v1 := Download{Hash: "aaa1", Files: []File{{"SKILL.md", "---\nname: Foo\ndescription: does foo\n---\nv1\n"}, {"scripts/run.py", "print(1)"}}}
+	f.dls["o/r/foo"] = v1
+	m, home := f.market(t)
+
+	d, err := m.Describe("o/r/foo")
+	if err != nil || d.Description != "does foo" || len(d.Files) != 2 || !slices.Equal(d.Flags, []string{"scripts"}) || d.Page != "https://skills.sh/o/r/foo" {
+		t.Fatalf("%v %+v", err, d)
+	}
+	if err := m.Install("o/r/foo", []string{"claude"}, false); !errors.Is(err, ErrConfirm) {
+		t.Fatalf("flags not enforced: %v", err)
+	}
+	if err := m.Install("o/r/foo", []string{"claude", "codex"}, true); err != nil {
+		t.Fatal(err)
+	}
+	claude := filepath.Join(home, "claude", "skills", "foo", "SKILL.md")
+	if _, err := os.Stat(claude); err != nil {
+		t.Fatal(err)
+	}
+	le := m.Lock()["o/r/foo"]
+	if le.Hash != "aaa1" || le.Source != "o/r" || le.SkillID != "foo" || le.Name != "Foo" || len(le.Tools) != 2 {
+		t.Fatalf("%+v", le)
+	}
+	if err := m.Install("x/y/foo", []string{"claude"}, true); err == nil {
+		t.Error("same folder name installed twice")
+	}
+	if u := m.CheckUpdates(); len(u) != 0 {
+		t.Fatalf("no update expected: %+v", u)
 	}
 
-	// uninstall removes only what it installed
+	// a new version upstream
+	f.dls["o/r/foo"] = Download{Hash: "bbb2", Files: []File{{"SKILL.md", "---\nname: Foo\n---\nv2\n"}}}
+	m.cache = nil
+	u := m.CheckUpdates()
+	if len(u) != 1 || u[0].From != "aaa1" || u[0].To != "bbb2" || len(m.Updates()) != 1 {
+		t.Fatalf("%+v", u)
+	}
+	diff, flags, err := m.Review("o/r/foo")
+	if err != nil || !strings.Contains(diff, "-v1\n+v2") || !strings.Contains(diff, "--- a/scripts/run.py") || len(flags) != 0 {
+		t.Fatalf("%v %v\n%s", err, flags, diff)
+	}
+	// a tool disabled it meanwhile: the update lands there
+	os.MkdirAll(filepath.Join(home, "codex", "skills-disabled"), 0o755)
+	os.Rename(filepath.Join(home, "codex", "skills", "foo"), filepath.Join(home, "codex", "skills-disabled", "foo"))
+	if err := m.Apply("o/r/foo", false); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(home, "codex", "skills-disabled", "foo", "SKILL.md"))
+	if !strings.Contains(string(b), "v2") || m.Lock()["o/r/foo"].Hash != "bbb2" || len(m.Updates()) != 0 {
+		t.Fatal("update not applied")
+	}
+	if _, err := os.Stat(filepath.Join(home, "claude", "skills", "foo", "scripts")); err == nil {
+		t.Error("removed file survived the update")
+	}
+	if _, _, err := m.Review("o/r/foo"); err == nil {
+		t.Error("up to date should not review")
+	}
+
 	other := filepath.Join(home, "claude", "skills", "mine")
 	os.MkdirAll(other, 0o755)
-	if err := m.Uninstall("o/r/skills/foo"); err != nil {
+	if err := m.Uninstall("o/r/foo"); err != nil {
 		t.Fatal(err)
 	}
 	for _, p := range []string{claude, filepath.Join(home, "codex", "skills-disabled", "foo"), m.canon("foo")} {
@@ -232,97 +219,49 @@ func TestInstallUpdateUninstall(t *testing.T) {
 			t.Errorf("%s still there", p)
 		}
 	}
-	if _, err := os.Stat(other); err != nil {
-		t.Error("uninstall touched another skill")
+	if _, err := os.Stat(other); err != nil || len(m.Lock()) != 0 {
+		t.Error("uninstall touched another skill or left the lock")
 	}
-	if len(m.Lock()) != 0 {
-		t.Error("lock not cleared")
+
+	// unsafe download: nothing lands
+	f.dls["o/r/bad"] = Download{Hash: "ccc", Files: []File{{"SKILL.md", "x"}, {"../../escape", "x"}}}
+	if err := m.Install("o/r/bad", []string{"claude"}, true); err == nil {
+		t.Fatal("unsafe path installed")
+	}
+	if _, err := os.Stat(filepath.Join(home, "claude", "skills", "bad")); err == nil || len(m.Lock()) != 0 {
+		t.Fatal("partial install left behind")
+	}
+	if err := m.Install("o/r/missing", []string{"claude"}, true); err == nil {
+		t.Fatal("404 installed")
 	}
 }
 
-func TestIndexFetch(t *testing.T) {
-	f, m, _ := newFixture(t)
-	if s := m.Status(); s.State != "ok" || len(m.Index().Skills) != 2 {
-		t.Fatalf("%+v", s)
-	}
-	if err := m.Refresh(); err != nil || f.gets != 2 || m.Status().State != "ok" {
-		t.Fatalf("304: %v %d", err, f.gets)
-	}
-	// a fresh Market reads the cache
-	m2 := &Market{Dir: m.Dir}
-	m2.loadCache()
-	if len(m2.Index().Skills) != 2 || m2.meta.ETag != `"`+ref1+`"` {
-		t.Fatal("cache not loaded")
+func TestRecommend(t *testing.T) {
+	f := newFake(t)
+	f.searches["react"] = []Skill{sk("a/b", "react-hooks", 10), sk("a/b", "mine", 99)}
+	f.searches["golang"] = []Skill{sk("c/d", "golang-style", 50), sk("a/b", "react-hooks", 10), sk("x/y", "popular-but-fuzzy", 9999)}
+	f.searches["go"] = []Skill{sk("c/e", "go-tips", 5), sk("x/z", "google-docs", 9999)}
+	m, _ := f.market(t)
+	sig := []Signal{{"your project uses React", []string{"react"}}, {"your project uses Go", []string{"golang", "go"}}}
+	got, err := m.Recommend(sig, func(s Skill) bool { return s.SkillID == "mine" }, 10)
+	if err != nil || len(got) != 3 || got[0].ID != "c/d/golang-style" || got[1].ID != "a/b/react-hooks" || len(got[1].Reasons) != 1 || got[2].ID != "c/e/go-tips" {
+		t.Fatalf("%v %+v", err, got)
 	}
 
-	// offline keeps the cached index
-	f.srv.Close()
-	if err := m.Refresh(); err == nil || m.Status().State != "offline" || len(m.Index().Skills) != 2 {
-		t.Fatalf("offline: %v %+v", err, m.Status())
-	}
-
-	// not published yet
-	nf := httptest.NewServer(http.NotFoundHandler())
-	defer nf.Close()
-	m3 := &Market{Dir: t.TempDir(), IndexURL: nf.URL, HTTP: nf.Client()}
-	if err := m3.Refresh(); err != nil || m3.Status().State != "missing" {
-		t.Fatalf("404: %v %+v", err, m3.Status())
-	}
-
-	// wrong version
-	v2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"version":2}`)) }))
-	defer v2.Close()
-	m4 := &Market{Dir: t.TempDir(), IndexURL: v2.URL, HTTP: v2.Client()}
-	if err := m4.Refresh(); err == nil || m4.Index().Version != 0 {
-		t.Fatal("version 2 accepted")
-	}
-}
-
-func TestUnified(t *testing.T) {
-	a := strings.Split("1 2 3 4 5 6 7 8 9 10 11 12", " ")
-	b := strings.Split("1 2 3 4 X 6 7 8 9 10 11 12 13", " ")
-	got := Unified("f", a, b)
-	want := "--- a/f\n+++ b/f\n@@ -2,7 +2,7 @@\n 2\n 3\n 4\n-5\n+X\n 6\n 7\n 8\n@@ -10,3 +10,4 @@\n 10\n 11\n 12\n+13\n"
-	if got != want {
-		t.Fatalf("got\n%s\nwant\n%s", got, want)
-	}
-}
-
-func TestScore(t *testing.T) {
-	es := []catalog.Entry{
-		{ID: "a", Name: "react-patterns", Description: "React hooks", Category: "coding/frontend", Stars: 10},
-		{ID: "b", Name: "vue-guide", Category: "coding/frontend", Stars: 1000},
-		{ID: "c", Name: "pdf", Category: "documents/pdf", Stars: 5000},
-		{ID: "d", Name: "react-installed", Description: "react", Category: "coding/frontend"},
-	}
-	sig := []Signal{{Reason: "your project uses React", Cats: []string{"coding/frontend"}, Words: []string{"react"}}}
-	got := Score(es, sig, func(e catalog.Entry) bool { return e.ID == "d" }, 10)
-	if len(got) != 2 || got[0].ID != "a" || got[1].ID != "b" {
-		t.Fatalf("%+v", got)
-	}
-	if got[0].Reasons[0] != "because your project uses React" {
-		t.Fatal(got[0].Reasons)
-	}
-	p := Pairs([]catalog.Entry{{ID: "x", Repo: "o/r"}, {ID: "y", Repo: "o/z"}}, map[string]string{"o/r": "foo"}, func(catalog.Entry) bool { return false }, 5)
-	if len(p) != 1 || p[0].ID != "x" {
-		t.Fatalf("%+v", p)
-	}
-}
-
-func TestScan(t *testing.T) {
 	d := t.TempDir()
 	os.WriteFile(filepath.Join(d, "package.json"), []byte(`{"dependencies":{"react":"19"},"devDependencies":{"@sveltejs/kit":"2"}}`), 0o644)
 	os.WriteFile(filepath.Join(d, "go.mod"), []byte("module x"), 0o644)
 	os.MkdirAll(filepath.Join(d, ".github", "workflows"), 0o755)
 	os.MkdirAll(filepath.Join(d, "node_modules", "x"), 0o755)
 	os.WriteFile(filepath.Join(d, "node_modules", "x", "Cargo.toml"), nil, 0o644)
-	var got []string
+	var reasons, terms []string
 	for _, s := range Scan(d) {
-		got = append(got, s.Reason)
+		reasons = append(reasons, s.Reason)
+		terms = append(terms, s.Terms...)
 	}
 	want := "your project uses GitHub Actions,your project uses Go,your project uses JavaScript,your project uses React,your project uses Svelte"
-	if strings.Join(got, ",") != want {
-		t.Fatalf("got %v", got)
+	if strings.Join(reasons, ",") != want || !slices.Contains(terms, "golang") || !slices.Contains(terms, "react") {
+		t.Fatalf("got %v %v", reasons, terms)
 	}
 
 	home := t.TempDir()
@@ -335,6 +274,40 @@ func TestScan(t *testing.T) {
 		if _, err := ProjectDir(bad, home); err == nil {
 			t.Errorf("%s accepted", bad)
 		}
+	}
+}
+
+func TestCheckLatest(t *testing.T) {
+	status := http.StatusNotFound
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if status != 200 {
+			http.Error(w, "nope", status)
+			return
+		}
+		w.Write([]byte(`{"tag_name":"v1.2.0","html_url":"https://github.com/tabhishekpaul/agentrig/releases/tag/v1.2.0"}`))
+	}))
+	defer srv.Close()
+	m := &Market{ReleasesURL: srv.URL, HTTP: srv.Client(), Version: "v1.1.0"}
+	if err := m.CheckLatest(); err != nil || m.Upgrade() != nil {
+		t.Fatal("no release yet must mean no banner", err)
+	}
+	status = 200
+	if err := m.CheckLatest(); err != nil || m.Upgrade() == nil || m.Upgrade().Version != "v1.2.0" {
+		t.Fatal("release not seen", err)
+	}
+	m.Version = "dev"
+	if m.Upgrade() != nil {
+		t.Fatal("dev nagged")
+	}
+}
+
+func TestUnified(t *testing.T) {
+	a := strings.Split("1 2 3 4 5 6 7 8 9 10 11 12", " ")
+	b := strings.Split("1 2 3 4 X 6 7 8 9 10 11 12 13", " ")
+	got := Unified("f", a, b)
+	want := "--- a/f\n+++ b/f\n@@ -2,7 +2,7 @@\n 2\n 3\n 4\n-5\n+X\n 6\n 7\n 8\n@@ -10,3 +10,4 @@\n 10\n 11\n 12\n+13\n"
+	if got != want {
+		t.Fatalf("got\n%s\nwant\n%s", got, want)
 	}
 }
 
@@ -355,21 +328,5 @@ func TestNewer(t *testing.T) {
 		if got := Newer(c.cur, c.latest); got != c.want {
 			t.Errorf("Newer(%s, %s) = %v", c.cur, c.latest, got)
 		}
-	}
-}
-
-func TestPopularity(t *testing.T) {
-	m := &Market{}
-	m.setIndex(catalog.Index{Version: 1, Skills: []catalog.Entry{
-		{ID: "stars", Name: "a", Stars: 9000},
-		{ID: "tie", Name: "b", Installs: 50, Stars: 1},
-		{ID: "installs", Name: "c", Installs: 50, Stars: 2},
-	}})
-	_, got := m.Query("", "", "", 0, 10)
-	if got[0].ID != "installs" || got[1].ID != "tie" || got[2].ID != "stars" {
-		t.Fatalf("default sort: %v", got)
-	}
-	if popularity(catalog.Entry{Installs: 10, Stars: 1e6}) >= popularity(catalog.Entry{Stars: 1e6}) {
-		t.Fatal("installs must win over the stars fallback when present")
 	}
 }

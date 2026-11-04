@@ -1,12 +1,10 @@
 package market
 
 import (
-	"archive/tar"
-	"compress/gzip"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -14,30 +12,26 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/tabhishekpaul/agentrig/catalog"
+	"github.com/tabhishekpaul/agentrig/adapters"
 )
 
-// Caps for third-party downloads.
+// Caps for one downloaded skill.
 const (
-	maxDownload = 200 << 20 // the whole repo tarball, compressed
-	maxSkill    = 50 << 20  // the extracted skill folder
-	maxFiles    = 5000
+	maxSkill = 50 << 20
+	maxFiles = 5000
+	bigSkill = 1 << 20 // over this, flagged "large"
 )
 
-var (
-	repoRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
-	refRe  = regexp.MustCompile(`^[0-9a-f]{40}$`)
-	nameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`)
-)
-
-// LockEntry records one marketplace install in lock.json, keyed by entry ID.
+// LockEntry records one marketplace install in lock.json, keyed by skill ID.
 type LockEntry struct {
-	Repo        string    `json:"repo"`
-	Dir         string    `json:"dir"`
-	Ref         string    `json:"ref"`
-	Name        string    `json:"name"` // skill folder name in every tool
+	ID          string    `json:"id"`
+	Source      string    `json:"source"`  // owner/repo on GitHub
+	SkillID     string    `json:"skillId"` // also the folder name in every tool
+	Hash        string    `json:"hash"`    // skills.sh version hash
+	Name        string    `json:"name"`
 	InstalledAt time.Time `json:"installedAt"`
 	Tools       []string  `json:"tools"`
 	Path        string    `json:"path"` // canonical copy under the config dir
@@ -66,50 +60,147 @@ func (m *Market) saveLock(l map[string]LockEntry) error {
 	return writeFile(m.lockPath(), b)
 }
 
-// validate checks the index fields that end up in URLs and paths and returns
-// the skill folder name: the last element of Dir, or the repo name.
-func validate(e catalog.Entry) (string, error) {
-	if !repoRe.MatchString(e.Repo) || slices.ContainsFunc(strings.Split(e.Repo, "/"), func(s string) bool { return s == "." || s == ".." }) {
-		return "", fmt.Errorf("bad repo %q", e.Repo)
+var (
+	scriptExt = []string{".sh", ".bash", ".zsh", ".fish", ".py", ".js", ".mjs", ".cjs", ".ts", ".mts", ".ps1", ".psm1", ".rb", ".pl", ".php", ".bat", ".cmd", ".lua"}
+	networkRe = regexp.MustCompile(`\b(curl|wget)\b|\bfetch\(|\brequests\.|https?://`)
+	pipeRe    = regexp.MustCompile(`(?i)\|\s*(sudo\s+)?(ba|z)?sh\b|\biex\b|invoke-expression`)
+	execMagic = [][]byte{[]byte("\x7fELF"), []byte("MZ"), {0xfe, 0xed, 0xfa, 0xce}, {0xfe, 0xed, 0xfa, 0xcf}, {0xce, 0xfa, 0xed, 0xfe}, {0xcf, 0xfa, 0xed, 0xfe}, {0xca, 0xfe, 0xba, 0xbe}}
+)
+
+// Flags lists what a reader should know before installing these files:
+// scripts, network (from scripts), shell-pipe, binary, large.
+func Flags(files []File) []string {
+	has := map[string]bool{}
+	total := 0
+	for _, f := range files {
+		total += len(f.Contents)
+		b := []byte(f.Contents)
+		if bytes.IndexByte(b, 0) >= 0 || slices.ContainsFunc(execMagic, func(p []byte) bool { return bytes.HasPrefix(b, p) }) {
+			has["binary"] = true
+			continue
+		}
+		if slices.Contains(scriptExt, strings.ToLower(path.Ext(f.Path))) || strings.HasPrefix(f.Contents, "#!") {
+			has["scripts"] = true
+			if networkRe.MatchString(f.Contents) {
+				has["network"] = true
+			}
+		}
+		if pipeRe.MatchString(f.Contents) {
+			has["shell-pipe"] = true
+		}
 	}
-	if !refRe.MatchString(e.Ref) {
-		return "", fmt.Errorf("%s isn't pinned to a commit", e.ID)
+	has["large"] = total > bigSkill
+	var out []string
+	for _, k := range []string{"scripts", "network", "shell-pipe", "binary", "large"} {
+		if has[k] {
+			out = append(out, k)
+		}
 	}
-	if e.Dir != "" && (!filepath.IsLocal(e.Dir) || path.Clean(e.Dir) != e.Dir || slices.Contains(strings.Split(e.Dir, "/"), "..")) {
-		return "", fmt.Errorf("bad folder %q", e.Dir)
-	}
-	n := path.Base(e.Dir)
-	if e.Dir == "" || e.Dir == "." {
-		n = path.Base(e.Repo)
-	}
-	if !nameRe.MatchString(n) {
-		return "", fmt.Errorf("unusable skill folder name %q", n)
-	}
-	return n, nil
+	return out
 }
 
-// Install downloads one skill at its pinned commit and copies it into each
-// tool's global skills folder. Flagged skills need accept.
+// Detail is what the dashboard shows for one skill before installing it.
+type Detail struct {
+	Description string     `json:"description"`
+	Files       []FileInfo `json:"files"`
+	Flags       []string   `json:"flags"`
+	Hash        string     `json:"hash"`
+	Page        string     `json:"page"` // skills.sh page
+	Repo        string     `json:"repo"` // GitHub repo
+}
+
+type FileInfo struct {
+	Path string `json:"path"`
+	Size int    `json:"size"`
+}
+
+// Describe downloads a skill and summarizes it without writing anything.
+func (m *Market) Describe(id string) (Detail, error) {
+	d, err := m.Get(id)
+	if err != nil {
+		return Detail{}, err
+	}
+	owner, repo, skill, _ := SplitID(id)
+	out := Detail{Flags: Flags(d.Files), Hash: d.Hash,
+		Page: "https://skills.sh/" + owner + "/" + repo + "/" + skill,
+		Repo: "https://github.com/" + owner + "/" + repo}
+	for _, f := range d.Files {
+		out.Files = append(out.Files, FileInfo{f.Path, len(f.Contents)})
+		if f.Path == "SKILL.md" {
+			out.Description = frontmatter(f.Contents)["description"]
+		}
+	}
+	slices.SortFunc(out.Files, func(a, b FileInfo) int { return strings.Compare(a.Path, b.Path) })
+	return out, nil
+}
+
+// stage writes d's files into a fresh temp folder next to the canonical
+// copies (same volume, so it can be renamed into place). Every path is
+// checked to stay inside it; only regular files are written, and nothing
+// downloaded is ever executed.
+func (m *Market) stage(d Download) (string, error) {
+	if err := os.MkdirAll(filepath.Join(m.cacheDir(), "skills"), 0o755); err != nil {
+		return "", err
+	}
+	dst, err := os.MkdirTemp(m.cacheDir(), "stage-*")
+	if err != nil {
+		return "", err
+	}
+	if err := writeFiles(d.Files, dst); err != nil {
+		os.RemoveAll(dst)
+		return "", err
+	}
+	return dst, nil
+}
+
+func writeFiles(files []File, dst string) error {
+	if len(files) > maxFiles {
+		return fmt.Errorf("skill has over %d files", maxFiles)
+	}
+	total, skill := 0, false
+	for _, f := range files {
+		p := f.Path
+		parts := strings.Split(p, "/")
+		if p == "" || path.Clean(p) != p || strings.ContainsAny(p, "\\:\x00") || slices.Contains(parts, "..") || slices.Contains(parts, ".") || !filepath.IsLocal(filepath.FromSlash(p)) {
+			return fmt.Errorf("unsafe path in download: %q", p)
+		}
+		if slices.ContainsFunc(parts, func(s string) bool { return strings.HasPrefix(s, ".env") || s == ".git" || s == ".DS_Store" }) {
+			continue
+		}
+		if total += len(f.Contents); total > maxSkill {
+			return fmt.Errorf("skill is over %d MB", maxSkill>>20)
+		}
+		skill = skill || p == "SKILL.md"
+		t := filepath.Join(dst, filepath.FromSlash(p))
+		if err := os.MkdirAll(filepath.Dir(t), 0o755); err != nil {
+			return err
+		}
+		// ponytail: the API carries no file modes, so nothing is made executable.
+		if err := os.WriteFile(t, []byte(f.Contents), 0o644); err != nil {
+			return err
+		}
+	}
+	if !skill {
+		return errors.New("download has no SKILL.md")
+	}
+	return nil
+}
+
+// Install downloads one skill and copies it into each tool's global skills
+// folder. Flagged skills need accept.
 func (m *Market) Install(id string, tools []string, accept bool) error {
 	m.opMu.Lock()
 	defer m.opMu.Unlock()
-	e, ok := m.Entry(id)
-	if !ok {
-		return errNotIndexed
-	}
-	name, err := validate(e)
+	_, _, name, err := SplitID(id)
 	if err != nil {
 		return err
 	}
-	if len(e.Flags) > 0 && !accept {
-		return ErrConfirm
-	}
 	lock := m.Lock()
 	if _, ok := lock[id]; ok {
-		return fmt.Errorf("%s is already installed", e.Name)
+		return fmt.Errorf("%s is already installed", id)
 	}
 	for oid, o := range lock {
-		if o.Name == name {
+		if o.SkillID == name {
 			return fmt.Errorf("the name %q is already used by %s; uninstall it first", name, oid)
 		}
 	}
@@ -129,8 +220,14 @@ func (m *Market) Install(id string, tools []string, accept bool) error {
 		}
 		dirs = append(dirs, d)
 	}
-
-	staged, err := m.stage(e)
+	dl, err := m.Get(id)
+	if err != nil {
+		return err
+	}
+	if len(Flags(dl.Files)) > 0 && !accept {
+		return ErrConfirm
+	}
+	staged, err := m.stage(dl)
 	if err != nil {
 		return err
 	}
@@ -149,13 +246,19 @@ func (m *Market) Install(id string, tools []string, accept bool) error {
 			return err
 		}
 	}
-	lock[id] = LockEntry{Repo: e.Repo, Dir: e.Dir, Ref: e.Ref, Name: name, InstalledAt: time.Now().UTC(), Tools: tools, Path: canon}
+	src, _ := strings.CutSuffix(id, "/"+name)
+	n := frontmatter(skillMD(dl))["name"]
+	if n == "" {
+		n = name
+	}
+	lock[id] = LockEntry{ID: id, Source: src, SkillID: name, Hash: dl.Hash, Name: n,
+		InstalledAt: time.Now().UTC(), Tools: tools, Path: canon}
 	return m.saveLock(lock)
 }
 
 // Uninstall removes exactly what Install put down: the copy in each recorded
 // tool (enabled or disabled) and the canonical copy. Paths are rebuilt from
-// the validated name, never taken from lock.json as-is.
+// the validated id, never taken from lock.json as-is.
 func (m *Market) Uninstall(id string) error {
 	m.opMu.Lock()
 	defer m.opMu.Unlock()
@@ -164,30 +267,37 @@ func (m *Market) Uninstall(id string) error {
 	if !ok {
 		return fmt.Errorf("%s wasn't installed from the marketplace", id)
 	}
-	if !nameRe.MatchString(le.Name) {
-		return fmt.Errorf("lock.json: bad name %q", le.Name)
+	_, _, name, err := SplitID(id)
+	if err != nil {
+		if !nameRe.MatchString(le.Name) { // installs from before skills.sh keyed by repo path
+			return err
+		}
+		name = le.Name
 	}
-	for _, p := range m.placed(le) {
+	for _, p := range m.placed(name, le.Tools) {
 		if err := os.RemoveAll(p); err != nil {
 			return err
 		}
 	}
-	if err := os.RemoveAll(m.canon(le.Name)); err != nil {
+	if err := os.RemoveAll(m.canon(name)); err != nil {
 		return err
 	}
 	delete(lock, id)
+	m.mu.Lock()
+	delete(m.updates, id)
+	m.mu.Unlock()
 	return m.saveLock(lock)
 }
 
-// placed lists where le's copies currently are (a tool may have disabled it).
-func (m *Market) placed(le LockEntry) []string {
+// placed lists where a skill's copies currently are (a tool may have disabled it).
+func (m *Market) placed(name string, tools []string) []string {
 	var out []string
-	for _, t := range le.Tools {
+	for _, t := range tools {
 		d := m.SkillDir(t)
 		if d == "" {
 			continue
 		}
-		for _, p := range []string{filepath.Join(d, le.Name), filepath.Join(d+"-disabled", le.Name)} {
+		for _, p := range []string{filepath.Join(d, name), filepath.Join(d+"-disabled", name)} {
 			if _, err := os.Lstat(p); err == nil {
 				out = append(out, p)
 			}
@@ -196,79 +306,104 @@ func (m *Market) placed(le LockEntry) []string {
 	return out
 }
 
-// Update is an available newer commit for an installed skill.
+// Update is a newer version of an installed skill.
 type Update struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
-	From string `json:"from"`
+	From string `json:"from"` // version hashes
 	To   string `json:"to"`
 }
 
-// Updates compares lock.json with the index. Nothing is applied.
-func (m *Market) Updates() []Update {
-	var out []Update
-	for id, le := range m.Lock() {
-		if e, ok := m.Entry(id); ok && e.Ref != "" && e.Ref != le.Ref {
-			out = append(out, Update{id, e.Name, le.Ref, e.Ref})
-		}
+// CheckUpdates downloads every installed skill and compares its hash with
+// the installed one. Nothing is applied.
+func (m *Market) CheckUpdates() []Update {
+	lock := m.Lock()
+	found := map[string]Update{}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4)
+	for id, le := range lock {
+		wg.Go(func() {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			if d, err := m.Get(id); err == nil && d.Hash != le.Hash {
+				mu.Lock()
+				found[id] = Update{id, le.Name, le.Hash, d.Hash}
+				mu.Unlock()
+			}
+		})
 	}
+	wg.Wait()
+	m.mu.Lock()
+	m.updates, m.checked = found, time.Now()
+	m.mu.Unlock()
+	return m.Updates()
+}
+
+// Updates returns the result of the last check.
+func (m *Market) Updates() []Update {
+	m.mu.Lock()
+	out := make([]Update, 0, len(m.updates))
+	for _, u := range m.updates {
+		out = append(out, u)
+	}
+	m.mu.Unlock()
 	slices.SortFunc(out, func(a, b Update) int { return strings.Compare(a.Name, b.Name) })
 	return out
 }
 
-// Review fetches the new commit and diffs it against the installed copy.
-func (m *Market) Review(id string) (string, error) {
-	le, e, err := m.pending(id)
-	if err != nil {
-		return "", err
-	}
-	staged, err := m.stage(e)
-	if err != nil {
-		return "", err
-	}
-	defer os.RemoveAll(staged)
-	return DiffTrees(m.canon(le.Name), staged, 512<<10)
-}
-
-func (m *Market) pending(id string) (LockEntry, catalog.Entry, error) {
+func (m *Market) pending(id string) (LockEntry, Download, error) {
 	le, ok := m.Lock()[id]
 	if !ok {
-		return le, catalog.Entry{}, fmt.Errorf("%s wasn't installed from the marketplace", id)
+		return le, Download{}, fmt.Errorf("%s wasn't installed from the marketplace", id)
 	}
-	e, ok := m.Entry(id)
-	if !ok {
-		return le, e, errNotIndexed
-	}
-	if e.Ref == le.Ref {
-		return le, e, fmt.Errorf("%s is up to date", e.Name)
-	}
-	name, err := validate(e)
+	d, err := m.Get(id)
 	if err != nil {
-		return le, e, err
+		return le, d, err
 	}
-	if name != le.Name {
-		return le, e, fmt.Errorf("%s was renamed upstream; uninstall and install it again", le.Name)
+	if d.Hash == le.Hash {
+		return le, d, fmt.Errorf("%s is up to date", le.Name)
 	}
-	return le, e, nil
+	return le, d, nil
 }
 
-// Apply installs the new commit of an installed skill everywhere it is.
+// Review diffs the installed copy against the current version and lists the
+// new version's flags.
+func (m *Market) Review(id string) (diff string, flags []string, err error) {
+	le, d, err := m.pending(id)
+	if err != nil {
+		return "", nil, err
+	}
+	staged, err := m.stage(d)
+	if err != nil {
+		return "", nil, err
+	}
+	defer os.RemoveAll(staged)
+	diff, err = DiffTrees(m.canon(le.SkillID), staged, 512<<10)
+	return diff, Flags(d.Files), err
+}
+
+// Apply installs the current version of an installed skill everywhere it is.
 func (m *Market) Apply(id string, accept bool) error {
 	m.opMu.Lock()
 	defer m.opMu.Unlock()
-	le, e, err := m.pending(id)
+	_, _, name, err := SplitID(id)
 	if err != nil {
 		return err
 	}
-	if len(e.Flags) > 0 && !accept {
+	le, d, err := m.pending(id)
+	if err != nil {
+		return err
+	}
+	if len(Flags(d.Files)) > 0 && !accept {
 		return ErrConfirm
 	}
-	staged, err := m.stage(e)
+	staged, err := m.stage(d)
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(staged)
-	canon := m.canon(le.Name)
+	canon := m.canon(name)
 	old := canon + ".old"
 	os.RemoveAll(old)
 	if err := os.Rename(canon, old); err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -279,7 +414,7 @@ func (m *Market) Apply(id string, accept bool) error {
 		return err
 	}
 	os.RemoveAll(old)
-	for _, p := range m.placed(le) {
+	for _, p := range m.placed(name, le.Tools) {
 		if err := os.RemoveAll(p); err != nil {
 			return err
 		}
@@ -288,141 +423,25 @@ func (m *Market) Apply(id string, accept bool) error {
 		}
 	}
 	lock := m.Lock()
-	le.Ref, le.Repo, le.Dir = e.Ref, e.Repo, e.Dir
+	le.Hash = d.Hash
 	lock[id] = le
+	m.mu.Lock()
+	delete(m.updates, id)
+	m.mu.Unlock()
 	return m.saveLock(lock)
 }
 
-// stage downloads e's repo at e.Ref into a fresh temp folder next to the
-// canonical copies (same volume, so it can be renamed into place).
-func (m *Market) stage(e catalog.Entry) (string, error) {
-	if err := os.MkdirAll(filepath.Join(m.cacheDir(), "skills"), 0o755); err != nil {
-		return "", err
-	}
-	dst, err := os.MkdirTemp(m.cacheDir(), "stage-*")
-	if err != nil {
-		return "", err
-	}
-	if err := m.download(e, dst); err != nil {
-		os.RemoveAll(dst)
-		return "", err
-	}
-	if _, err := os.Stat(filepath.Join(dst, "SKILL.md")); err != nil {
-		os.RemoveAll(dst)
-		return "", fmt.Errorf("%s has no SKILL.md at this commit", e.ID)
-	}
-	return dst, nil
+func frontmatter(md string) map[string]string {
+	return adapters.ParseFrontmatter(strings.NewReader(md))
 }
 
-func (m *Market) download(e catalog.Entry, dst string) error {
-	res, err := m.HTTP.Get(fmt.Sprintf("%s/%s/tar.gz/%s", m.Codeload, e.Repo, e.Ref))
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode != 200 {
-		return fmt.Errorf("download %s: %s", e.Repo, res.Status)
-	}
-	return extract(&capped{res.Body, maxDownload}, e.Dir, dst)
-}
-
-var errTooBig = errors.New("download is too large")
-
-type capped struct {
-	r io.Reader
-	n int64
-}
-
-func (c *capped) Read(p []byte) (int, error) {
-	if c.n <= 0 {
-		return 0, errTooBig
-	}
-	if int64(len(p)) > c.n {
-		p = p[:c.n]
-	}
-	n, err := c.r.Read(p)
-	c.n -= int64(n)
-	return n, err
-}
-
-// extract writes the files under dir of a codeload tarball (one top-level
-// folder wrapping the repo) into dst. Only regular files and folders are
-// written; nothing is ever executed.
-// ponytail: symlinks and hard links are dropped rather than checked, so no
-// write can be redirected outside dst; support in-tree links if skills need them.
-func extract(r io.Reader, dir, dst string) error {
-	zr, err := gzip.NewReader(r)
-	if err != nil {
-		return err
-	}
-	tr := tar.NewReader(zr)
-	var total int64
-	files := 0
-	for {
-		h, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-		_, rel, ok := strings.Cut(h.Name, "/") // drop "owner-repo-sha/"
-		if !ok {
-			continue // pax_global_header
-		}
-		rel = strings.TrimSuffix(rel, "/")
-		if dir != "" && dir != "." {
-			var in bool
-			if rel, in = strings.CutPrefix(rel, dir+"/"); !in {
-				continue
-			}
-		}
-		if rel == "" {
-			continue
-		}
-		parts := strings.Split(rel, "/")
-		if strings.HasPrefix(rel, "/") || slices.Contains(parts, "..") || !filepath.IsLocal(filepath.FromSlash(rel)) {
-			return fmt.Errorf("unsafe path in download: %q", h.Name)
-		}
-		if slices.ContainsFunc(parts, func(p string) bool { return strings.HasPrefix(p, ".env") || p == ".git" || p == ".DS_Store" }) {
-			continue
-		}
-		p := filepath.Join(dst, filepath.FromSlash(rel))
-		switch h.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(p, 0o755); err != nil {
-				return err
-			}
-		case tar.TypeReg:
-			files++
-			total += h.Size
-			if files > maxFiles || total > maxSkill {
-				return fmt.Errorf("skill folder is over the limit (%d files / %d MB)", maxFiles, maxSkill>>20)
-			}
-			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-				return err
-			}
-			mode := fs.FileMode(0o644)
-			if h.Mode&0o111 != 0 {
-				mode = 0o755
-			}
-			f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
-			if err != nil {
-				return err
-			}
-			_, err = io.Copy(f, io.LimitReader(tr, h.Size))
-			if err2 := f.Close(); err == nil {
-				err = err2
-			}
-			if err != nil {
-				return err
-			}
+func skillMD(d Download) string {
+	for _, f := range d.Files {
+		if f.Path == "SKILL.md" {
+			return f.Contents
 		}
 	}
-	if files == 0 {
-		return fmt.Errorf("folder %q not found at this commit", dir)
-	}
-	return nil
+	return ""
 }
 
 // copyTree copies the regular files and folders of src (a staged skill) to dst.

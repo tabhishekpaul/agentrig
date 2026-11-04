@@ -1,5 +1,5 @@
 // Package catalog is the one skill index every feature reads: the dashboard's
-// categories and search, `arig mcp`, project skills, and the marketplace.
+// categories and search, `arig mcp`, project skills, and marketplace badges.
 package catalog
 
 import (
@@ -7,16 +7,14 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 	"unicode"
 
 	"github.com/tabhishekpaul/agentrig/adapters"
 )
 
-// Entry is one skill, either installed here (Path set) or in the marketplace
-// (Repo/Ref set). The same JSON shape is used in the marketplace index.
+// Entry is one skill installed here; Installs is set for marketplace results.
 type Entry struct {
-	ID          string   `json:"id"` // local: skill folder name; marketplace: owner/repo/path
+	ID          string   `json:"id"` // skill folder name
 	Name        string   `json:"name"`
 	Description string   `json:"description,omitempty"`
 	Category    string   `json:"category"` // "top/sub" from Categories, e.g. "media/video"
@@ -24,21 +22,7 @@ type Entry struct {
 	Path        string   `json:"path,omitempty"`  // local folder holding SKILL.md
 	Tools       []string `json:"tools,omitempty"` // tool ids that have it installed
 	Enabled     bool     `json:"enabled,omitempty"`
-	Repo        string   `json:"repo,omitempty"` // marketplace: owner/repo on GitHub
-	Dir         string   `json:"dir,omitempty"`  // marketplace: folder inside the repo
-	Ref         string   `json:"ref,omitempty"`  // marketplace: commit SHA
-	Stars       int      `json:"stars,omitempty"`
 	Installs    int      `json:"installs,omitempty"`
-	Updated     string   `json:"updated,omitempty"` // RFC 3339
-	Flags       []string `json:"flags,omitempty"`   // safety: scripts, network, shell-pipe, binary
-}
-
-// Index is the marketplace file published daily at IndexURL.
-type Index struct {
-	Version   int       `json:"version"` // 1
-	Generated time.Time `json:"generated"`
-	Skills    []Entry   `json:"skills"`
-	Packs     []Pack    `json:"packs,omitempty"`
 }
 
 // Pack is a named list of skills installed together. Skills keep their own
@@ -51,8 +35,6 @@ type Pack struct {
 	Skills      []string `json:"skills"` // Entry IDs
 	Repo        string   `json:"repo,omitempty"`
 }
-
-const IndexURL = "https://tabhishekpaul.github.io/agentrig/index/v1/index.json"
 
 type Category struct {
 	ID   string   `json:"id"`

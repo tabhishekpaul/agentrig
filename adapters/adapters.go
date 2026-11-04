@@ -4,6 +4,7 @@ package adapters
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -64,13 +65,18 @@ func errNotToggleable(tool, kind string) error {
 // (name, description, category, tags, …).
 // ponytail: single-line values only; swap in a YAML parser if folded (>) descriptions show up.
 func Frontmatter(path string) map[string]string {
-	out := map[string]string{}
 	f, err := os.Open(path)
 	if err != nil {
-		return out
+		return map[string]string{}
 	}
 	defer f.Close()
-	s := bufio.NewScanner(f)
+	return ParseFrontmatter(f)
+}
+
+// ParseFrontmatter is Frontmatter for SKILL.md text that isn't on disk.
+func ParseFrontmatter(r io.Reader) map[string]string {
+	out := map[string]string{}
+	s := bufio.NewScanner(r)
 	if !s.Scan() || strings.TrimSpace(s.Text()) != "---" {
 		return out
 	}
