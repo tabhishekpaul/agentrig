@@ -37,3 +37,17 @@ func TestOpenExternalRefuses(t *testing.T) {
 		}
 	}
 }
+
+func TestIcoFromPNG(t *testing.T) {
+	ico := icoFromPNG(icon256PNG)
+	if len(ico) != 22+len(icon256PNG) || ico[2] != 1 || ico[4] != 1 || string(ico[22:26]) != "\x89PNG" {
+		t.Fatal("bad .ico header")
+	}
+}
+
+func TestDesktopEntryQuotes(t *testing.T) {
+	e := desktopEntry(`/home/a b/$x/arig`)
+	if !strings.Contains(e, `Exec="/home/a b/\\$x/arig" app`) || !strings.Contains(e, "Name=Agentrig") {
+		t.Fatal(e)
+	}
+}

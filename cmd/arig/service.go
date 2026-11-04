@@ -145,6 +145,9 @@ func ensureService() error {
 			}
 		}
 	case "linux":
+		if err := installShortcut(exe); err != nil {
+			fmt.Fprintln(os.Stderr, "arig: couldn't add Agentrig to the app menu:", err)
+		}
 		changed, err := writeIfChanged(unitPath(), unit(exe))
 		if err != nil {
 			return err
@@ -159,6 +162,9 @@ func ensureService() error {
 	case "windows":
 		// ponytail: Run key starts it at login but nothing restarts it after a
 		// crash; `arig` restarts it on demand. Use a scheduled task if that matters.
+		if err := installShortcut(exe); err != nil {
+			fmt.Fprintln(os.Stderr, "arig: couldn't add Agentrig to the Start menu:", err)
+		}
 		if err := run("reg", "add", winRunKey, "/v", "arig", "/t", "REG_SZ", "/d", `"`+exe+`" serve`, "/f"); err != nil {
 			return err
 		}
@@ -196,8 +202,10 @@ func removeService() error {
 			return err
 		}
 		_ = run("systemctl", "--user", "daemon-reload")
+		removeShortcut()
 	case "windows":
 		_ = run("reg", "delete", winRunKey, "/v", "arig", "/f")
+		removeShortcut()
 		_ = run("taskkill", "/F", "/IM", "arig.exe")
 	}
 	return nil
