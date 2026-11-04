@@ -165,3 +165,7 @@ func copyTree(src, dst string) error {
 		}
 	})
 }
+
+// CopyTree copies src (file, dir or symlink) to dst; used to back up and
+// restore items outside a sync.
+func CopyTree(src, dst string) error { return copyTree(src, dst) }
